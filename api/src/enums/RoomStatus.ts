@@ -1,0 +1,6 @@
+export enum RoomStatus {
+  WAITING = "WAITING",
+  STARTING = "STARTING",
+  PLAYING = "PLAYING",
+  FINISHED = "FINISHED",
+}

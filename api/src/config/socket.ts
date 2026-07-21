@@ -1,0 +1,14 @@
+import { Server as HttpServer } from "http";
+import { Server } from "socket.io";
+import { env } from "./env";
+
+export function createSocketServer(httpServer: HttpServer): Server {
+  const io = new Server(httpServer, {
+    cors: {
+      origin: env.CORS_ORIGIN,
+      methods: ["GET", "POST"],
+    },
+  });
+
+  return io;
+}
