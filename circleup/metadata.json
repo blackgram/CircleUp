@@ -1,0 +1,6 @@
+{
+  "name": "CircleUp",
+  "description": "Multiplayer social gaming platform where friends create private circles, play interactive party games, and connect in real time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

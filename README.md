@@ -1,176 +1,88 @@
 # CircleUp
-# Game World API
 
-Multiplayer party game platform backend built with Express, Socket.IO, MongoDB, and TypeScript.
+**Gather. Play. Connect.**
 
-## Quick Start
+A multiplayer social gaming platform where groups of friends create private circles (rooms), invite others using a room code, and play interactive party games together in real time.
 
-```bash
-# Install dependencies
-npm install
+*by AJ*
 
-# Copy environment file
-cp .env.example .env
-
-# Start MongoDB (Docker)
-docker run -d --name mongodb -p 27017:27017 mongo:7
-
-# Run development server
-npm run dev
-```
-
-Server starts at `http://localhost:3000`
-
-## Scripts
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Start with hot reload (tsx watch) |
-| `npm run build` | Compile TypeScript to dist/ |
-| `npm start` | Run compiled output |
-
-## Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `NODE_ENV` | development | Environment |
-| `PORT` | 3000 | Server port |
-| `LOG_LEVEL` | info | Pino log level |
-| `DATABASE_URL` | — | MongoDB connection string |
-| `REDIS_URL` | — | Optional. Redis for token blacklist + room storage |
-| `JWT_SECRET` | — | Access token signing key |
-| `JWT_REFRESH_SECRET` | — | Refresh token signing key |
-| `JWT_ACCESS_EXPIRY` | 900 | Access token TTL (seconds) |
-| `JWT_REFRESH_EXPIRY` | 604800 | Refresh token TTL (seconds) |
-| `GOOGLE_CLIENT_ID` | — | Google OAuth client ID |
-| `CORS_ORIGIN` | http://localhost:5173 | Allowed CORS origin |
-
-## API Documentation
-
-Interactive Swagger UI: `http://localhost:3000/swagger`
-
-Raw OpenAPI JSON: `http://localhost:3000/swagger.json`
-
-## Project Structure
-
-```
-src/
-├── app.ts                 # Express app setup
-├── server.ts              # HTTP + Socket.IO bootstrap
-│
-├── config/                # Environment, database, redis, swagger
-├── routes/                # Express route definitions + OpenAPI docs
-├── controllers/           # HTTP request handlers
-├── services/              # Business logic
-├── repositories/          # MongoDB data access
-├── models/                # Mongoose schemas
-│
-├── socket/                # Socket.IO layer
-│   ├── index.ts           # Event registration
-│   ├── socketAuth.ts      # JWT auth middleware
-│   ├── SocketManager.ts   # Centralized broadcasting
-│   ├── RoomGateway.ts     # Room join/leave/ready
-│   ├── GameGateway.ts     # Game start/action
-│   └── events.ts          # Typed event definitions
-│
-├── storage/               # IRoomStorage interface + implementations
-│   ├── IRoomStorage.ts
-│   ├── MemoryStorage.ts
-│   └── index.ts
-│
-├── game-engine/           # Game adapter registry
-│   ├── GameEngine.ts
-│   └── index.ts
-│
-├── middleware/            # Auth, admin authorization
-├── dto/                   # Request/Response types
-├── enums/                 # AuthProvider, RoomStatus, UserRole, etc.
-├── types/                 # GameSession, GameAdapter interfaces
-├── utils/                 # Logger
-├── jobs/                  # Future: scheduled tasks
-└── models/                # Mongoose document schemas
-```
+---
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for full design decisions.
+```
+game-world/
+├── api/          Express + Socket.IO backend (TypeScript)
+├── app/          Next.js frontend (TypeScript + Tailwind + shadcn/ui)
+└── circleup/     Design reference (AI Studio generated)
+```
 
-### Key Patterns
+## Quick Start
 
-- **Layered:** Routes → Controllers → Services → Repositories → Database
-- **Storage agnostic:** Rooms live in memory (Redis swap requires zero code changes)
-- **Plugin games:** Implement `GameAdapter`, register with `GameEngine`
-- **Snapshot sockets:** Every state change broadcasts the full current state
-- **Generic events:** `game:action` handles all game types
+### Prerequisites
 
-### API Modules
+- Node.js 18+
+- MongoDB (local or Docker)
+- Redis (optional)
 
-| Module | Prefix | Auth | Description |
-|---|---|---|---|
-| Health | `/health` | No | Server status |
-| Auth | `/api/auth` | Partial | Register, login, logout, refresh, me |
-| Users | `/api/users` | Partial | Profile, search, update |
-| Friends | `/api/friends` | Yes | Requests, accept, reject, list |
-| Rooms | `/api/rooms` | Yes | Create, join, leave, settings, start/end |
-| Games | `/api/games` | No | Browse game catalog |
-| Notifications | `/api/notifications` | Yes | Read, mark, clear |
-| Admin | `/api/admin` | Admin | Manage games, view rooms/users/analytics |
+### 1. Start the API
 
-### Socket.IO Events
-
-**Client → Server:**
-- `room:join` — Join a room by code
-- `room:leave` — Leave current room
-- `player:ready` — Toggle ready status
-- `game:start` — Host starts the game
-- `game:action` — Submit any game action
-
-**Server → Client:**
-- `room:update` — Full room state snapshot
-- `game:update` — Full game session snapshot
-- `game:ended` — Final scores
-- `error` — Error message
-
-### User Roles
-
-| Role | Access |
-|---|---|
-| `USER` | Default. All player features |
-| `ADMIN` | Game management, analytics. Set via database |
-
-Promote a user to admin:
 ```bash
-mongosh mongodb://localhost:27017/game-world \
-  --eval 'db.users.updateOne({ email: "you@example.com" }, { $set: { role: "ADMIN" } })'
+cd api
+cp .env.example .env
+# Edit .env with your secrets
+npm install
+npm run dev
 ```
 
-## Adding a New Game
+API runs at `http://localhost:3000`  
+Swagger docs at `http://localhost:3000/swagger`
 
-1. Create `src/game-engine/adapters/my-game.ts`:
-```typescript
-import { GameAdapter } from "../types";
+### 2. Start the Frontend
 
-export const myGameAdapter: GameAdapter = {
-  slug: "my-game",
-  name: "My Game",
-  settingsSchema: [
-    { key: "rounds", type: "number", label: "Rounds", default: 10, min: 1, max: 20 },
-  ],
-  validateSettings(settings) { return { valid: true }; },
-  validateSubmission(submission) { return { valid: true }; },
-  computeResults(content, submissions, config) {
-    return { scores: [], data: {} };
-  },
-};
+```bash
+cd app
+npm install
+npm run dev
 ```
 
-2. Register in `src/game-engine/index.ts`:
-```typescript
-import { myGameAdapter } from "./adapters/my-game";
-gameEngine.register(myGameAdapter);
+App runs at `http://localhost:3001`
+
+### 3. Start MongoDB
+
+```bash
+docker run -d --name mongodb -p 27017:27017 mongo:7
 ```
 
-3. Create the game definition via admin API
-4. Build the frontend renderer
+---
 
-No changes to services, sockets, or other games required.
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 16, TypeScript, Tailwind CSS v4, shadcn/ui, React Query, Zustand, Socket.IO Client |
+| Backend | Express, TypeScript, Socket.IO, Mongoose, Pino |
+| Database | MongoDB |
+| Cache | Redis (optional) |
+| Auth | JWT (access + refresh tokens), Google OAuth |
+
+## Key Features
+
+- Real-time multiplayer rooms via Socket.IO
+- Plugin-based game architecture (add games without changing infrastructure)
+- Schema-driven game settings (frontend auto-renders from backend schemas)
+- Friend system with notifications
+- Admin panel for game management
+- Token blacklisting for immediate logout
+- Storage-agnostic room management (memory/Redis)
+
+## Documentation
+
+- [API README](./api/README.md) — endpoints, project structure, how to add games
+- [API Architecture](./api/ARCHITECTURE.md) — full design decisions and principles
+- [App README](./app/README.md) — frontend setup, pages, design system
+- [Swagger UI](http://localhost:3000/swagger) — interactive API docs (when running)
+
+## Environment
+
+See `.env.example` files in both `api/` and `app/` for required configuration.
