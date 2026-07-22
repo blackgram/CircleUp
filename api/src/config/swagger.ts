@@ -4,12 +4,13 @@ const options: swaggerJsdoc.Options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "Game World API",
+      title: "CircleUp API",
       version: "1.0.0",
       description: "Multiplayer party game platform API",
     },
     servers: [
-      { url: "http://localhost:3000", description: "Development" },
+      { url: "/", description: "Current" },
+      { url: "http://localhost:3000", description: "Local Development" },
     ],
     tags: [
       { name: "Auth", description: "Authentication endpoints" },
@@ -113,8 +114,14 @@ const options: swaggerJsdoc.Options = {
             roomCode: { type: "string" },
             hostId: { type: "string" },
             gameSlug: { type: "string" },
-            status: { type: "string", enum: ["WAITING", "STARTING", "PLAYING", "FINISHED"] },
-            players: { type: "array", items: { $ref: "#/components/schemas/RoomPlayerResponse" } },
+            status: {
+              type: "string",
+              enum: ["WAITING", "STARTING", "PLAYING", "FINISHED"],
+            },
+            players: {
+              type: "array",
+              items: { $ref: "#/components/schemas/RoomPlayerResponse" },
+            },
             settings: { type: "object" },
           },
         },
@@ -149,7 +156,10 @@ const options: swaggerJsdoc.Options = {
             displayName: { type: "string" },
             nickname: { type: "string" },
             avatarUrl: { type: "string" },
-            status: { type: "string", enum: ["PENDING", "ACCEPTED", "REJECTED", "BLOCKED"] },
+            status: {
+              type: "string",
+              enum: ["PENDING", "ACCEPTED", "REJECTED", "BLOCKED"],
+            },
           },
         },
       },

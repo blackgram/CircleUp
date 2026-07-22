@@ -19,7 +19,12 @@ const app = express();
 
 // Middleware
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGIN }));
+app.use(cors({
+  origin: env.CORS_ORIGIN.includes(",")
+    ? env.CORS_ORIGIN.split(",").map((o) => o.trim())
+    : env.CORS_ORIGIN,
+  credentials: true,
+}));
 app.use(pinoHttp({ logger }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
