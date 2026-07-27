@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { roomsApi } from "@/lib/api/services";
+import { useEnabledGames } from "@/hooks/useGames";
+import { getSocket } from "@/lib/socket/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, Users, Play, LogOut, Crown, Check } from "lucide-react";
+import { Copy, Users, Play, LogOut, Crown, Check, Gamepad2 } from "lucide-react";
 import { toast } from "sonner";
-import type { RoomResponse } from "@/types";
+import type { RoomResponse, RoomStatePayload } from "@/types";
 
 export default function CirclePage() {
   const params = useParams();
@@ -17,9 +19,75 @@ export default function CirclePage() {
   const [room, setRoom] = useState<RoomResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [selectingGame, setSelectingGame] = useState(false);
+  const { data: enabledGames } = useEnabledGames();
 
   useEffect(() => {
     loadRoom();
+  }, [roomCode]);
+
+  // Socket: join room channel and listen for updates
+  useEffect(() => {
+    const socket = getSocket();
+
+    console.log("[CirclePage] Socket connected?", socket.connected, "id:", socket.id);
+
+    function handleRoomUpdate(payload: RoomStatePayload) {
+      console.log("[CirclePage] room:update received:", JSON.stringify(payload, null, 2));
+      // Detect players who left
+      setRoom((prev) => {
+        if (!prev) return prev;
+        const prevIds = prev.players.map((p) => p.userId);
+        const newIds = payload.players.map((p) => p.userId);
+        const left = prev.players.filter((p) => !newIds.includes(p.userId));
+        left.forEach((p) => {
+          toast.info(`${p.nickname} left the circle`);
+        });
+        return {
+          ...prev,
+          players: payload.players as RoomResponse["players"],
+          status: payload.status as RoomResponse["status"],
+          gameSlug: payload.gameSlug,
+        };
+      });
+    }
+
+    socket.on("room:update", handleRoomUpdate);
+
+    // Emit room:join to subscribe to this room's socket channel
+    if (socket.connected) {
+      console.log("[CirclePage] Emitting room:join for:", roomCode);
+      socket.emit("room:join", { roomCode }, (res) => {
+        console.log("[CirclePage] room:join ack:", res);
+        if (!res.success) {
+          console.error("[CirclePage] Failed to join room socket:", res.message);
+        }
+      });
+    } else {
+      console.log("[CirclePage] Socket not connected, waiting for connect event...");
+      const onConnect = () => {
+        console.log("[CirclePage] Socket connected, now emitting room:join for:", roomCode);
+        socket.emit("room:join", { roomCode }, (res) => {
+          console.log("[CirclePage] room:join ack:", res);
+          if (!res.success) {
+            console.error("[CirclePage] Failed to join room socket:", res.message);
+          }
+        });
+      };
+      socket.on("connect", onConnect);
+      return () => {
+        socket.off("connect", onConnect);
+        socket.off("room:update", handleRoomUpdate);
+      };
+    }
+
+    return () => {
+      socket.off("room:update", handleRoomUpdate);
+      // Optionally leave on unmount
+      socket.emit("room:leave", (res) => {
+        console.log("[CirclePage] room:leave ack:", res);
+      });
+    };
   }, [roomCode]);
 
   async function loadRoom() {
@@ -44,7 +112,15 @@ export default function CirclePage() {
 
   async function handleLeave() {
     try {
-      await roomsApi.leave(roomCode);
+      const socket = getSocket();
+      if (socket.connected) {
+        socket.emit("room:leave", (res) => {
+          console.log("[CirclePage] room:leave ack:", res);
+        });
+      } else {
+        // Fallback to REST if socket not connected
+        await roomsApi.leave(roomCode);
+      }
       toast.success("Left circle");
       window.location.href = "/dashboard";
     } catch {}
@@ -61,6 +137,21 @@ export default function CirclePage() {
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Cannot start game");
+    }
+  }
+
+  async function handleSelectGame(slug: string) {
+    setSelectingGame(true);
+    try {
+      const { data } = await roomsApi.updateSettings(roomCode, { gameSlug: slug });
+      if (data.success && data.data) {
+        setRoom(data.data);
+        toast.success("Game selected!");
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to select game");
+    } finally {
+      setSelectingGame(false);
     }
   }
 
@@ -113,12 +204,6 @@ export default function CirclePage() {
             </span>
           </div>
         </div>
-
-        {room.gameSlug && (
-          <p className="text-sm text-slate-600 mt-3">
-            Game: <span className="font-bold text-indigo-600">{room.gameSlug}</span>
-          </p>
-        )}
       </div>
 
       {/* Players */}
@@ -155,6 +240,59 @@ export default function CirclePage() {
           ))}
         </div>
       </div>
+
+      {/* Game Selection (host only, while waiting) */}
+      {isHost && room.status === "WAITING" && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+          <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <Gamepad2 className="w-4 h-4 text-indigo-500" />
+            Select Game
+          </h3>
+          {enabledGames && enabledGames.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {enabledGames.map((game) => {
+                const isSelected = room.gameSlug === game.slug;
+                const playerCountOk = room.players.length >= game.minPlayers && room.players.length <= game.maxPlayers;
+                return (
+                  <button
+                    key={game.id}
+                    onClick={() => handleSelectGame(game.slug)}
+                    disabled={selectingGame || isSelected}
+                    className={`text-left p-4 rounded-xl border-2 transition-all ${
+                      isSelected
+                        ? "border-indigo-500 bg-indigo-50"
+                        : "border-slate-100 hover:border-indigo-300 hover:bg-slate-50"
+                    } disabled:opacity-60`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{game.icon || "🎮"}</span>
+                      <p className="text-sm font-bold text-slate-900">{game.name}</p>
+                      {isSelected && <Check className="w-4 h-4 text-indigo-600 ml-auto" />}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">{game.description}</p>
+                    <p className={`text-[10px] mt-2 font-semibold ${playerCountOk ? "text-emerald-600" : "text-amber-600"}`}>
+                      {game.minPlayers}–{game.maxPlayers} players
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">No games available</p>
+          )}
+        </div>
+      )}
+
+      {/* Show selected game for non-host */}
+      {!isHost && room.gameSlug && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+          <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+            <Gamepad2 className="w-4 h-4 text-indigo-500" />
+            Selected Game
+          </h3>
+          <p className="text-sm font-bold text-indigo-600">{room.gameSlug}</p>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex items-center gap-3">

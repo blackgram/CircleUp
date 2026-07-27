@@ -3,7 +3,7 @@
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { connectSocket, disconnectSocket } from "@/lib/socket/client";
@@ -23,6 +23,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { openAuthModal } = useUIStore();
   const router = useRouter();
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -69,7 +74,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             );
           })}
 
-          {isAdmin() && (
+          {mounted && isAdmin() && (
             <Link
               href="/admin"
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
@@ -86,7 +91,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* User Footer */}
         <div className="border-t border-slate-200 p-4">
-          {user ? (
+          {mounted && user ? (
             <div>
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-sm font-bold text-white">
@@ -122,7 +127,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Link href="/dashboard" className="text-lg font-extrabold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
             CircleUp
           </Link>
-          {user ? (
+          {mounted && user ? (
             <button
               onClick={() => router.push("/profile")}
               className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-xs font-bold text-white"

@@ -53,6 +53,23 @@ export function connectSocket(): void {
     // Update token before connecting
     const token = useAuthStore.getState().accessToken;
     s.auth = { token };
+
+    s.on("connect", () => {
+      console.log("[Socket] Connected, id:", s.id);
+    });
+    s.on("disconnect", (reason) => {
+      console.log("[Socket] Disconnected, reason:", reason);
+    });
+    s.on("connect_error", (err) => {
+      console.error("[Socket] Connection error:", err.message);
+    });
+    s.on("room:update", (payload) => {
+      console.log("[Socket] room:update received:", payload);
+    });
+    s.on("error", (payload) => {
+      console.error("[Socket] Server error:", payload.message);
+    });
+
     s.connect();
   }
 }

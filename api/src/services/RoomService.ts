@@ -57,15 +57,15 @@ export class RoomService {
       throw new Error("Room is not accepting players");
     }
 
-    if (room.players.length >= room.settings.maxPlayers) {
-      throw new Error("Room is full");
-    }
-
     const existing = room.players.find((p) => p.userId === userId);
     if (existing) {
       existing.connected = true;
       await roomStorage.updateRoom(roomCode, room);
       return this.toResponse(room);
+    }
+
+    if (room.players.length >= room.settings.maxPlayers) {
+      throw new Error("Room is full");
     }
 
     const user = await userRepository.findById(userId);
@@ -81,6 +81,8 @@ export class RoomService {
       joinedAt: new Date(),
     };
 
+    // Remove any potential duplicates before adding (defensive)
+    room.players = room.players.filter((p) => p.userId !== userId);
     room.players.push(player);
     await roomStorage.updateRoom(roomCode, room);
     return this.toResponse(room);
