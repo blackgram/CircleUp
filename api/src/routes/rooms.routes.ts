@@ -63,6 +63,20 @@ roomsRouter.post("/leave", roomController.leave);
 
 /**
  * @openapi
+ * /api/rooms/public:
+ *   get:
+ *     tags: [Rooms]
+ *     summary: List public rooms available to join
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Public rooms
+ */
+roomsRouter.get("/public", roomController.getPublicRooms);
+
+/**
+ * @openapi
  * /api/rooms/{roomCode}:
  *   get:
  *     tags: [Rooms]

@@ -4,6 +4,7 @@ import { passwordService } from "./PasswordService";
 import { jwtService } from "./JwtService";
 import { googleAuthService } from "./GoogleAuthService";
 import { tokenBlacklistService } from "./TokenBlacklistService";
+import { notificationService } from "../NotificationService";
 import { AuthProvider } from "../../enums";
 import { RegisterRequest, LoginRequest } from "../../dto/requests";
 import { AuthResponse, UserProfileResponse } from "../../dto/responses";
@@ -34,6 +35,8 @@ export class AuthService {
       provider: AuthProvider.LOCAL,
     });
 
+    await notificationService.notifyWelcome(user.id, user.displayName);
+
     return this.buildAuthResponse(user);
   }
 
@@ -53,10 +56,18 @@ export class AuthService {
     return this.buildAuthResponse(user);
   }
 
-  async googleAuth(idToken: string): Promise<AuthResponse> {
-    const googleUser = await googleAuthService.verifyToken(idToken);
+  async googleAuth(idToken?: string, accessToken?: string): Promise<AuthResponse & { isNewUser: boolean }> {
+    let googleUser;
+    if (accessToken) {
+      googleUser = await googleAuthService.verifyAccessToken(accessToken);
+    } else if (idToken) {
+      googleUser = await googleAuthService.verifyToken(idToken);
+    } else {
+      throw new Error("Either idToken or accessToken is required");
+    }
 
     let user = await userRepository.findByGoogleId(googleUser.sub);
+    let isNewUser = false;
 
     if (!user) {
       const existingEmail = await userRepository.findByEmail(googleUser.email);
@@ -72,11 +83,15 @@ export class AuthService {
         provider: AuthProvider.GOOGLE,
         googleId: googleUser.sub,
       });
+      isNewUser = true;
+
+      await notificationService.notifyWelcome(user.id, user.displayName);
     }
 
     await userRepository.updateLastSeen(user.id);
 
-    return this.buildAuthResponse(user);
+    const response = await this.buildAuthResponse(user);
+    return { ...response, isNewUser };
   }
 
   async refresh(refreshToken: string): Promise<AuthResponse> {

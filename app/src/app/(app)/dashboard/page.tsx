@@ -5,10 +5,15 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { roomsApi } from "@/lib/api/services";
+import { useEnabledGames } from "@/hooks/useGames";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Sparkles, PlusCircle, Radio, Trophy, Gamepad2, Zap, Flame, Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import Image from "next/image";
+import { PlusCircle, Radio, Trophy, Gamepad2, Zap, Flame, Loader2, Users, Globe } from "lucide-react";
 import { toast } from "sonner";
+import type { RoomResponse } from "@/types";
 
 export default function DashboardPage() {
   const { user, isAuthenticated } = useAuthStore();
@@ -17,6 +22,17 @@ export default function DashboardPage() {
   const [joinCode, setJoinCode] = useState("");
   const [joining, setJoining] = useState(false);
   const [creating, setCreating] = useState(false);
+  const { data: enabledGames } = useEnabledGames();
+
+  const { data: publicRooms, isLoading: publicRoomsLoading } = useQuery({
+    queryKey: ["rooms", "public"],
+    queryFn: async () => {
+      const { data } = await roomsApi.getPublic();
+      return data.data || [];
+    },
+    enabled: isAuthenticated(),
+    refetchInterval: 15000,
+  });
 
   async function handleCreateClick() {
     if (!isAuthenticated()) {
@@ -78,7 +94,7 @@ export default function DashboardPage() {
         <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-xs font-bold text-indigo-100 backdrop-blur-md">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <Image src="/logo.png" alt="" width={14} height={14} />
               <span>Multiplayer Social Party Gaming</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
@@ -151,12 +167,93 @@ export default function DashboardPage() {
             <Gamepad2 className="w-4 h-4 text-indigo-500" /> Games
           </h3>
         </div>
-        <div className="bg-white rounded-2xl p-8 text-center text-slate-500 shadow-sm border border-slate-100">
-          <Gamepad2 className="w-8 h-8 mx-auto text-slate-300 mb-3" />
-          <p className="font-semibold text-slate-700">No games available yet</p>
-          <p className="text-sm mt-1">Check back soon — new games are coming!</p>
-        </div>
+        {enabledGames && enabledGames.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {enabledGames.map((game) => (
+              <div key={game.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center font-bold text-lg">
+                  {game.icon || "🎮"}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-900">{game.name}</p>
+                  <p className="text-xs text-slate-500">{game.minPlayers}–{game.maxPlayers} players</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl p-8 text-center text-slate-500 shadow-sm border border-slate-100">
+            <Gamepad2 className="w-8 h-8 mx-auto text-slate-300 mb-3" />
+            <p className="font-semibold text-slate-700">No games available yet</p>
+            <p className="text-sm mt-1">Check back soon — new games are coming!</p>
+          </div>
+        )}
       </div>
+
+      {/* Public Rooms Section */}
+      {isAuthenticated() && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Globe className="w-4 h-4 text-emerald-500" /> Public Circles
+            </h3>
+            <span className="text-xs text-slate-400 font-medium">{publicRooms?.length || 0} open</span>
+          </div>
+          {publicRoomsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 rounded-2xl" />
+              ))}
+            </div>
+          ) : publicRooms && publicRooms.length > 0 ? (
+            <div className="space-y-3">
+              {publicRooms.map((room: RoomResponse) => (
+                <div key={room.roomCode} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-slate-900 font-mono">{room.roomCode}</p>
+                        {room.gameSlug && (
+                          <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">
+                            {enabledGames?.find((g) => g.slug === room.gameSlug)?.name || room.gameSlug}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {room.players.length}/{room.settings.maxPlayers} players
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const { data } = await roomsApi.join(room.roomCode);
+                        if (data.success) {
+                          router.push(`/circle/${room.roomCode}`);
+                        }
+                      } catch (err: any) {
+                        toast.error(err.response?.data?.message || "Failed to join");
+                      }
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl px-3"
+                  >
+                    Join
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl p-6 text-center border border-slate-100">
+              <Globe className="w-6 h-6 mx-auto text-slate-300 mb-2" />
+              <p className="text-sm font-semibold text-slate-600">No public circles right now</p>
+              <p className="text-xs text-slate-400 mt-1">Create one and set it to public!</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Not logged in prompt */}
       {!user && (

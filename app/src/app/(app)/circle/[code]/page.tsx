@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { roomsApi } from "@/lib/api/services";
@@ -23,6 +23,8 @@ export default function CirclePage() {
   const [copied, setCopied] = useState(false);
   const [selectingGame, setSelectingGame] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [localSettings, setLocalSettings] = useState<Record<string, unknown>>({});
+  const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const { data: enabledGames } = useEnabledGames();
   const { data: gameDetail } = useGameBySlug(room?.gameSlug || "");
 
@@ -54,6 +56,8 @@ export default function CirclePage() {
           settings: payload.settings as unknown as RoomResponse["settings"],
         };
       });
+      // Clear local overrides since server state is now authoritative
+      setLocalSettings({});
     }
 
     function handleGameUpdate(payload: GameStatePayload) {
@@ -76,12 +80,18 @@ export default function CirclePage() {
       });
     }
 
+    // Listen for connect event (fires on reconnect or delayed initial connect)
+    function onConnect() {
+      console.log("[CirclePage] Socket connected, joining room:", roomCode);
+      joinRoom();
+    }
+
     socket.on("room:update", handleRoomUpdate);
     socket.on("game:update", handleGameUpdate);
     socket.on("game:ended", handleGameEnded);
+    socket.on("connect", onConnect);
 
-    // Join immediately if connected, otherwise the connect handler
-    // in connectSocket() will auto-rejoin via currentRoomCode
+    // Join immediately if connected, otherwise the connect listener above will handle it
     if (socket.connected) {
       joinRoom();
     }
@@ -90,6 +100,7 @@ export default function CirclePage() {
       socket.off("room:update", handleRoomUpdate);
       socket.off("game:update", handleGameUpdate);
       socket.off("game:ended", handleGameEnded);
+      socket.off("connect", onConnect);
       setCurrentRoomCode(null);
     };
   }, [roomCode]);
@@ -141,6 +152,15 @@ export default function CirclePage() {
     });
   }
 
+  function handleToggleReady() {
+    const socket = getSocket();
+    socket.emit("player:ready", (res) => {
+      if (!res.success) {
+        toast.error(res.message || "Failed to toggle ready");
+      }
+    });
+  }
+
   async function handleSelectGame(slug: string) {
     setSelectingGame(true);
     try {
@@ -157,32 +177,51 @@ export default function CirclePage() {
   }
 
   async function handleGameOptionChange(key: string, value: unknown) {
-    setSavingSettings(true);
-    try {
-      const updatedOptions = { ...room?.settings.gameOptions, [key]: value };
-      const { data } = await roomsApi.updateSettings(roomCode, { gameOptions: updatedOptions });
-      if (data.success && data.data) {
-        setRoom(data.data);
+    // Update local state immediately for smooth slider
+    setLocalSettings((prev) => ({ ...prev, [key]: value }));
+
+    // Debounce the API call
+    if (debounceTimers.current[key]) clearTimeout(debounceTimers.current[key]);
+    debounceTimers.current[key] = setTimeout(async () => {
+      try {
+        const currentOptions = room?.settings.gameOptions || {};
+        const updatedOptions = { ...currentOptions, ...localSettings, [key]: value };
+        const { data } = await roomsApi.updateSettings(roomCode, { gameOptions: updatedOptions });
+        if (data.success && data.data) {
+          setRoom(data.data);
+        }
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || "Failed to update setting");
       }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to update setting");
-    } finally {
-      setSavingSettings(false);
-    }
+    }, 400);
   }
 
-  async function handleRoomSettingChange(updates: Record<string, unknown>) {
-    setSavingSettings(true);
-    try {
-      const { data } = await roomsApi.updateSettings(roomCode, updates);
-      if (data.success && data.data) {
-        setRoom(data.data);
+  async function handleRoomSettingChange(key: string, value: unknown) {
+    // Update local state immediately
+    setLocalSettings((prev) => ({ ...prev, [`_room_${key}`]: value }));
+
+    // Debounce the API call
+    const timerKey = `_room_${key}`;
+    if (debounceTimers.current[timerKey]) clearTimeout(debounceTimers.current[timerKey]);
+    debounceTimers.current[timerKey] = setTimeout(async () => {
+      try {
+        const { data } = await roomsApi.updateSettings(roomCode, { [key]: value });
+        if (data.success && data.data) {
+          setRoom(data.data);
+        }
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || "Failed to update setting");
       }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to update setting");
-    } finally {
-      setSavingSettings(false);
-    }
+    }, 400);
+  }
+
+  // Helper to get the current value: local override or room state
+  function getGameOption(key: string, fallback: unknown): unknown {
+    return localSettings[key] ?? room?.settings.gameOptions[key] ?? fallback;
+  }
+
+  function getRoomSetting(key: string): unknown {
+    return localSettings[`_room_${key}`] ?? (room?.settings as any)?.[key];
   }
 
   if (loading) {
@@ -251,31 +290,47 @@ export default function CirclePage() {
           Players ({room.players.length}/{room.settings.maxPlayers})
         </h3>
         <div className="space-y-3">
-          {room.players.map((player) => (
-            <div key={player.userId} className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${
-                  player.connected ? "bg-gradient-to-br from-indigo-500 to-violet-600" : "bg-slate-300"
-                }`}>
-                  {player.nickname[0]?.toUpperCase()}
+          {room.players.map((player) => {
+            const isMe = player.userId === user?.id;
+            return (
+              <div key={player.userId} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${
+                    player.connected ? "bg-gradient-to-br from-indigo-500 to-violet-600" : "bg-slate-300"
+                  }`}>
+                    {player.nickname[0]?.toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      {player.nickname}
+                      {player.userId === room.hostId && <Crown className="w-3.5 h-3.5 text-amber-500" />}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      {player.connected ? "Connected" : "Disconnected"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                    {player.nickname}
-                    {player.userId === room.hostId && <Crown className="w-3.5 h-3.5 text-amber-500" />}
-                  </p>
-                  <p className="text-[10px] text-slate-500">
-                    {player.connected ? "Connected" : "Disconnected"}
-                  </p>
-                </div>
+                {isMe ? (
+                  <button
+                    onClick={handleToggleReady}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+                      player.ready
+                        ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                    }`}
+                  >
+                    {player.ready ? "✓ Ready" : "Ready Up"}
+                  </button>
+                ) : (
+                  <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
+                    player.ready ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                  }`}>
+                    {player.ready ? "Ready" : "Not Ready"}
+                  </span>
+                )}
               </div>
-              <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
-                player.ready ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
-              }`}>
-                {player.ready ? "Ready" : "Not Ready"}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -332,21 +387,21 @@ export default function CirclePage() {
             <div>
               <label className="text-sm font-semibold text-slate-700 block mb-1.5">Rounds</label>
               <div className="flex items-center gap-3">
-                <input type="range" min={1} max={30} value={Number(room.settings.gameOptions.rounds) || 10} onChange={(e) => handleGameOptionChange("rounds", Number(e.target.value))} disabled={savingSettings} className="flex-1 accent-indigo-600 disabled:opacity-50" />
-                <span className="text-sm font-bold text-slate-900 w-10 text-center tabular-nums">{Number(room.settings.gameOptions.rounds) || 10}</span>
+                <input type="range" min={1} max={30} value={Number(getGameOption("rounds", 10))} onChange={(e) => handleGameOptionChange("rounds", Number(e.target.value))} className="flex-1 accent-indigo-600" />
+                <span className="text-sm font-bold text-slate-900 w-10 text-center tabular-nums">{Number(getGameOption("rounds", 10))}</span>
               </div>
             </div>
             <div>
               <label className="text-sm font-semibold text-slate-700 block mb-1.5">Max Players</label>
               <div className="flex items-center gap-3">
-                <input type="range" min={2} max={gameDetail?.maxPlayers || 16} value={room.settings.maxPlayers} onChange={(e) => handleRoomSettingChange({ maxPlayers: Number(e.target.value) })} disabled={savingSettings} className="flex-1 accent-indigo-600 disabled:opacity-50" />
-                <span className="text-sm font-bold text-slate-900 w-10 text-center tabular-nums">{room.settings.maxPlayers}</span>
+                <input type="range" min={2} max={gameDetail?.maxPlayers || 16} value={Number(getRoomSetting("maxPlayers"))} onChange={(e) => handleRoomSettingChange("maxPlayers", Number(e.target.value))} className="flex-1 accent-indigo-600" />
+                <span className="text-sm font-bold text-slate-900 w-10 text-center tabular-nums">{Number(getRoomSetting("maxPlayers"))}</span>
               </div>
             </div>
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-slate-700">Private Room</label>
-              <button onClick={() => handleRoomSettingChange({ privateRoom: !room.settings.privateRoom })} disabled={savingSettings} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${room.settings.privateRoom ? "bg-indigo-600" : "bg-slate-200"} disabled:opacity-50`}>
-                <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${room.settings.privateRoom ? "translate-x-6" : "translate-x-1"}`} />
+              <button onClick={() => handleRoomSettingChange("privateRoom", !getRoomSetting("privateRoom"))} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${getRoomSetting("privateRoom") ? "bg-indigo-600" : "bg-slate-200"}`}>
+                <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${getRoomSetting("privateRoom") ? "translate-x-6" : "translate-x-1"}`} />
               </button>
             </div>
             {gameDetail?.settingsSchema && gameDetail.settingsSchema.length > 0 && (
@@ -355,31 +410,31 @@ export default function CirclePage() {
                   <p className="text-xs font-bold text-slate-400 uppercase mb-3">{gameDetail.name} Options</p>
                 </div>
                 {gameDetail.settingsSchema.map((setting: SettingDefinition) => {
-                  const currentValue = room.settings.gameOptions[setting.key] ?? setting.default;
+                  const currentValue = getGameOption(setting.key, setting.default);
                   return (
                     <div key={setting.key}>
                       <label className="text-sm font-semibold text-slate-700 block mb-1.5">{setting.label}</label>
                       {setting.type === "boolean" && (
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-slate-500">{currentValue ? "On" : "Off"}</span>
-                          <button onClick={() => handleGameOptionChange(setting.key, !currentValue)} disabled={savingSettings} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${currentValue ? "bg-indigo-600" : "bg-slate-200"} disabled:opacity-50`}>
+                          <button onClick={() => handleGameOptionChange(setting.key, !currentValue)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${currentValue ? "bg-indigo-600" : "bg-slate-200"}`}>
                             <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${currentValue ? "translate-x-6" : "translate-x-1"}`} />
                           </button>
                         </div>
                       )}
                       {setting.type === "number" && (
                         <div className="flex items-center gap-3">
-                          <input type="range" min={setting.min ?? 1} max={setting.max ?? 100} value={Number(currentValue) || setting.min || 1} onChange={(e) => handleGameOptionChange(setting.key, Number(e.target.value))} disabled={savingSettings} className="flex-1 accent-indigo-600 disabled:opacity-50" />
+                          <input type="range" min={setting.min ?? 1} max={setting.max ?? 100} value={Number(currentValue) || setting.min || 1} onChange={(e) => handleGameOptionChange(setting.key, Number(e.target.value))} className="flex-1 accent-indigo-600" />
                           <span className="text-sm font-bold text-slate-900 w-10 text-center tabular-nums">{Number(currentValue) || setting.min || 1}</span>
                         </div>
                       )}
                       {setting.type === "select" && setting.options && (
-                        <select value={String(currentValue ?? "")} onChange={(e) => handleGameOptionChange(setting.key, e.target.value)} disabled={savingSettings} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
+                        <select value={String(currentValue ?? "")} onChange={(e) => handleGameOptionChange(setting.key, e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                           {setting.options.map((opt) => (<option key={String(opt.value)} value={String(opt.value)}>{opt.label}</option>))}
                         </select>
                       )}
                       {setting.type === "string" && !setting.options && (
-                        <input type="text" value={String(currentValue ?? "")} onChange={(e) => handleGameOptionChange(setting.key, e.target.value)} disabled={savingSettings} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50" />
+                        <input type="text" value={String(currentValue ?? "")} onChange={(e) => handleGameOptionChange(setting.key, e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                       )}
                     </div>
                   );

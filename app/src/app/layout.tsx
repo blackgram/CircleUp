@@ -11,6 +11,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "CircleUp — Gather. Play. Connect.",
   description: "A multiplayer social gaming platform where friends create circles and play interactive party games together in real time.",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

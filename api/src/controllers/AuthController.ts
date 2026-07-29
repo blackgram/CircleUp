@@ -30,9 +30,9 @@ export class AuthController {
 
   async google(req: Request, res: Response) {
     try {
-      const body: GoogleLoginRequest = req.body;
-      const data = await authService.googleAuth(body.idToken);
-      const response: ApiResponse<AuthResponse> = { success: true, data };
+      const { idToken, accessToken } = req.body;
+      const data = await authService.googleAuth(idToken, accessToken);
+      const response: ApiResponse<typeof data> = { success: true, data };
       res.json(response);
     } catch (err: any) {
       const response: ApiResponse = { success: false, message: err.message };

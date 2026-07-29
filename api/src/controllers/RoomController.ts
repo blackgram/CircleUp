@@ -27,6 +27,15 @@ export class RoomController {
         return;
       }
       const data = await roomService.join(userId, roomCode);
+
+      // Broadcast to existing players so they see the new player immediately
+      try {
+        const sm = getSocketManager();
+        await sm.broadcastRoomState(roomCode);
+      } catch {
+        // Socket not initialized — non-fatal
+      }
+
       const response: ApiResponse<RoomResponse> = { success: true, data };
       res.json(response);
     } catch (err: any) {
@@ -100,6 +109,17 @@ export class RoomController {
     } catch (err: any) {
       const response: ApiResponse = { success: false, message: err.message };
       res.status(400).json(response);
+    }
+  }
+
+  async getPublicRooms(req: Request, res: Response) {
+    try {
+      const data = await roomService.getPublicRooms();
+      const response: ApiResponse<RoomResponse[]> = { success: true, data };
+      res.json(response);
+    } catch (err: any) {
+      const response: ApiResponse = { success: false, message: err.message };
+      res.status(500).json(response);
     }
   }
 

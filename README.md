@@ -68,13 +68,23 @@ docker run -d --name mongodb -p 27017:27017 mongo:7
 
 ## Key Features
 
-- Real-time multiplayer rooms via Socket.IO
+- Real-time multiplayer rooms via Socket.IO with auto-reconnection
 - Plugin-based game architecture (add games without changing infrastructure)
 - Schema-driven game settings (frontend auto-renders from backend schemas)
-- Friend system with notifications
-- Admin panel for game management
-- Token blacklisting for immediate logout
-- Storage-agnostic room management (memory/Redis)
+- First game: "Most Likely To" — voting game with timer, anonymous mode, expose reveal
+- Redis-backed room/session persistence (survives server restarts)
+- Friend system with search, requests, and notifications
+- Inline notification actions (accept friend requests from notifications)
+- Public room discovery (browse and join open circles)
+- Google OAuth (popup flow, Safari-compatible) + email/password auth
+- Post-registration nickname prompt for new Google users
+- Welcome notification on registration
+- Admin panel: game management, settings schema editor, analytics
+- Lobby/game screen separation with collapsible panels
+- Route change loader with branded animation
+- Host transfer on disconnect
+- Player ready system
+- Debounced game settings with smooth sliders
 
 ## Documentation
 

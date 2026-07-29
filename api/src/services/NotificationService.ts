@@ -31,15 +31,26 @@ export class NotificationService {
 
   // ── Helper methods for common notifications ──
 
-  async notifyFriendRequest(recipientId: string, senderName: string, senderId: string): Promise<void> {
+  async notifyWelcome(userId: string, displayName: string): Promise<void> {
+    await this.create({
+      userId,
+      type: NotificationType.WELCOME,
+      category: "system",
+      title: "Welcome to CircleUp! 🎉",
+      message: `Hey ${displayName}, welcome aboard! Create a circle, invite friends, and start playing party games together.`,
+      actionUrl: "/dashboard",
+    });
+  }
+
+  async notifyFriendRequest(recipientId: string, senderName: string, senderId: string, friendshipId: string): Promise<void> {
     await this.create({
       userId: recipientId,
       type: NotificationType.FRIEND_REQUEST,
       category: "social",
       title: "New Friend Request",
       message: `${senderName} sent you a friend request.`,
-      actionUrl: "/friends/requests",
-      data: { senderId },
+      actionUrl: "/friends",
+      data: { senderId, friendshipId },
     });
   }
 

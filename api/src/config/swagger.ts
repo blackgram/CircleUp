@@ -59,10 +59,11 @@ const options: swaggerJsdoc.Options = {
         },
         GoogleLoginRequest: {
           type: "object",
-          required: ["idToken"],
           properties: {
-            idToken: { type: "string" },
+            idToken: { type: "string", description: "Google ID token (from One Tap)" },
+            accessToken: { type: "string", description: "Google access token (from OAuth popup)" },
           },
+          description: "Provide either idToken or accessToken",
         },
         RefreshTokenRequest: {
           type: "object",
@@ -94,11 +95,9 @@ const options: swaggerJsdoc.Options = {
         },
         CreateRoomRequest: {
           type: "object",
-          required: ["gameSlug", "maxPlayers", "privateRoom"],
           properties: {
-            gameSlug: { type: "string" },
-            maxPlayers: { type: "number" },
-            privateRoom: { type: "boolean" },
+            maxPlayers: { type: "number", default: 8 },
+            privateRoom: { type: "boolean", default: true },
           },
         },
         JoinRoomRequest: {

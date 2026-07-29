@@ -5,6 +5,7 @@ import { useUIStore } from "@/stores/ui";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { connectSocket, disconnectSocket } from "@/lib/socket/client";
 import { AuthModal } from "@/components/auth-modal";
@@ -30,11 +31,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated()) {
+    if (user) {
       connectSocket();
     }
-    return () => { disconnectSocket(); };
-  }, [isAuthenticated]);
+    return () => {
+      if (!user) disconnectSocket();
+    };
+  }, [user]);
 
   function handleNavClick(e: React.MouseEvent, item: typeof navItems[0]) {
     if (item.auth && !isAuthenticated()) {
@@ -48,8 +51,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:w-64 lg:flex-col border-r border-slate-200 bg-white">
         <div className="flex h-16 items-center px-6 border-b border-slate-200">
-          <Link href="/dashboard" className="text-xl font-extrabold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-            CircleUp
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <Image src="/logo.png" alt="CircleUp" width={28} height={28} />
+            <span className="text-xl font-extrabold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">CircleUp</span>
           </Link>
         </div>
 
@@ -124,8 +128,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col overflow-auto min-h-screen">
         {/* Mobile Top Bar */}
         <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 sticky top-0 z-40">
-          <Link href="/dashboard" className="text-lg font-extrabold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-            CircleUp
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <Image src="/logo.png" alt="CircleUp" width={24} height={24} />
+            <span className="text-lg font-extrabold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">CircleUp</span>
           </Link>
           {mounted && user ? (
             <button

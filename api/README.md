@@ -75,11 +75,14 @@ src/
 ├── storage/               # IRoomStorage interface + implementations
 │   ├── IRoomStorage.ts
 │   ├── MemoryStorage.ts
+│   ├── RedisStorage.ts
 │   └── index.ts
 │
 ├── game-engine/           # Game adapter registry
 │   ├── GameEngine.ts
-│   └── index.ts
+│   ├── index.ts
+│   └── adapters/
+│       └── most-likely-to.ts
 │
 ├── middleware/            # Auth, admin authorization
 ├── dto/                   # Request/Response types
@@ -97,38 +100,65 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for full design decisions.
 ### Key Patterns
 
 - **Layered:** Routes → Controllers → Services → Repositories → Database
-- **Storage agnostic:** Rooms live in memory (Redis swap requires zero code changes)
+- **Storage agnostic:** Rooms persist in Redis when available, fallback to in-memory
 - **Plugin games:** Implement `GameAdapter`, register with `GameEngine`
 - **Snapshot sockets:** Every state change broadcasts the full current state
 - **Generic events:** `game:action` handles all game types
+- **Auto-reconnect:** Players can rejoin mid-game after page reload or disconnect
 
 ### API Modules
 
 | Module | Prefix | Auth | Description |
 |---|---|---|---|
 | Health | `/health` | No | Server status |
-| Auth | `/api/auth` | Partial | Register, login, logout, refresh, me |
-| Users | `/api/users` | Partial | Profile, search, update |
-| Friends | `/api/friends` | Yes | Requests, accept, reject, list |
-| Rooms | `/api/rooms` | Yes | Create, join, leave, settings, start/end |
-| Games | `/api/games` | No | Browse game catalog |
+| Auth | `/api/auth` | Partial | Register, login, Google OAuth, logout, refresh |
+| Users | `/api/users` | Partial | Profile, search, update nickname |
+| Friends | `/api/friends` | Yes | Requests, accept, reject, remove, list |
+| Rooms | `/api/rooms` | Yes | Create, join, leave, settings, start/end, public list |
+| Games | `/api/games` | No | Browse game catalog, get details with settingsSchema |
 | Notifications | `/api/notifications` | Yes | Read, mark, clear |
 | Admin | `/api/admin` | Admin | Manage games, view rooms/users/analytics |
 
 ### Socket.IO Events
 
+**Connection:**
+- Auth: pass `{ token }` in `socket.handshake.auth`
+- Reconnection: automatic with `reconnectionAttempts: Infinity`
+
 **Client → Server:**
-- `room:join` — Join a room by code
-- `room:leave` — Leave current room
-- `player:ready` — Toggle ready status
-- `game:start` — Host starts the game
-- `game:action` — Submit any game action
+
+| Event | Payload | Description |
+|---|---|---|
+| `room:join` | `{ roomCode }` | Join/rejoin a room (works during PLAYING for reconnection) |
+| `room:leave` | — | Leave current room |
+| `player:ready` | — | Toggle ready status |
+| `game:start` | — | Host starts the game |
+| `game:action` | `{ action, payload }` | Submit any game action (see below) |
+
+**Game Actions (via `game:action`):**
+
+| Action | Who | Payload | Description |
+|---|---|---|---|
+| `start_round` | Host | `{ question }` | Start a new round with a question |
+| `vote` | Player | `{ votedFor: userId }` | Vote for a player |
+| `expose_results` | Host | `{}` | Reveal all anonymous votes at end of game |
+| `return_to_lobby` | Host | `{}` | Reset room to WAITING after game ends |
 
 **Server → Client:**
-- `room:update` — Full room state snapshot
-- `game:update` — Full game session snapshot
-- `game:ended` — Final scores
-- `error` — Error message
+
+| Event | Payload | Description |
+|---|---|---|
+| `room:update` | Full room state | Broadcast on any room change (players, settings, status) |
+| `game:update` | Game state + round data | Broadcast on game state changes |
+| `game:ended` | `{ finalScores, winner }` | Fired when game completes |
+| `notification:new` | Notification object | Real-time notification push |
+| `error` | `{ message }` | Error message |
+
+**Reconnection Flow:**
+1. Socket disconnects → server marks player as `connected: false`
+2. If disconnected player is host → host transfers to next connected player
+3. Socket reconnects → client auto-emits `room:join` with stored `roomCode`
+4. Server re-adds to socket room, marks `connected: true`, sends current game state
 
 ### User Roles
 

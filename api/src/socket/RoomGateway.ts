@@ -112,6 +112,16 @@ export class RoomGateway {
     if (player) {
       player.connected = false;
       player.socketId = "";
+
+      // Transfer host if the disconnecting user is the host
+      if (room.hostId === userId) {
+        const connectedPlayer = room.players.find((p) => p.userId !== userId && p.connected);
+        if (connectedPlayer) {
+          room.hostId = connectedPlayer.userId;
+          logger.info({ roomCode, oldHost: userId, newHost: connectedPlayer.userId }, "Host transferred on disconnect");
+        }
+      }
+
       await roomStorage.updateRoom(roomCode, room);
 
       await this.socketManager.broadcastRoomState(roomCode);

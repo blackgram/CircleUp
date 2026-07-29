@@ -1,15 +1,19 @@
 "use client";
 
-import { Bell, CheckCheck, Trash2, Radio, UserPlus, Trophy, Info } from "lucide-react";
+import { Bell, CheckCheck, Trash2, Radio, UserPlus, Trophy, Info, Check, X, ExternalLink, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useClearNotifications } from "@/hooks/useNotifications";
+import { useAcceptFriendRequest, useRejectFriendRequest } from "@/hooks/useFriends";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import type { NotificationResponse } from "@/types";
 
 function getNotificationIcon(type: string) {
   switch (type) {
+    case "WELCOME": return <Sparkles className="w-4 h-4 text-amber-500" />;
     case "ROOM_INVITE": return <Radio className="w-4 h-4 text-indigo-500" />;
     case "FRIEND_REQUEST":
     case "FRIEND_ACCEPTED": return <UserPlus className="w-4 h-4 text-emerald-500" />;
@@ -23,10 +27,50 @@ function getNotificationIcon(type: string) {
 export default function NotificationsPage() {
   const { isAuthenticated } = useAuthStore();
   const { openAuthModal } = useUIStore();
+  const router = useRouter();
   const { data: notifications, isLoading } = useNotifications();
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
   const clearAll = useClearNotifications();
+  const acceptRequest = useAcceptFriendRequest();
+  const rejectRequest = useRejectFriendRequest();
+
+  function handleNotificationClick(notif: NotificationResponse) {
+    if (!notif.read) {
+      markRead.mutate(notif.id);
+    }
+    if (notif.actionUrl) {
+      router.push(notif.actionUrl);
+    }
+  }
+
+  function handleAcceptFriend(notif: NotificationResponse, e: React.MouseEvent) {
+    e.stopPropagation();
+    const friendshipId = notif.data?.friendshipId as string;
+    if (!friendshipId) {
+      // Fallback: navigate to friends page
+      router.push("/friends");
+      return;
+    }
+    acceptRequest.mutate(friendshipId, {
+      onSuccess: () => {
+        toast.success("Friend request accepted!");
+        if (!notif.read) markRead.mutate(notif.id);
+      },
+    });
+  }
+
+  function handleRejectFriend(notif: NotificationResponse, e: React.MouseEvent) {
+    e.stopPropagation();
+    const friendshipId = notif.data?.friendshipId as string;
+    if (!friendshipId) return;
+    rejectRequest.mutate(friendshipId, {
+      onSuccess: () => {
+        toast.info("Friend request rejected");
+        if (!notif.read) markRead.mutate(notif.id);
+      },
+    });
+  }
 
   if (!isAuthenticated()) {
     return (
@@ -82,17 +126,43 @@ export default function NotificationsPage() {
           {notifications.map((notif: NotificationResponse) => (
             <div
               key={notif.id}
-              onClick={() => !notif.read && markRead.mutate(notif.id)}
+              onClick={() => handleNotificationClick(notif)}
               className={`bg-white rounded-2xl p-4 border shadow-sm flex items-start gap-3 cursor-pointer transition-all hover:shadow-md ${
                 notif.read ? "border-slate-100 opacity-70" : "border-indigo-100 bg-indigo-50/30"
               }`}
             >
-              <div className={`p-2.5 rounded-xl ${notif.read ? "bg-slate-100" : "bg-indigo-100"}`}>
+              <div className={`p-2.5 rounded-xl shrink-0 ${notif.read ? "bg-slate-100" : "bg-indigo-100"}`}>
                 {getNotificationIcon(notif.type)}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-slate-900">{notif.title}</p>
                 <p className="text-xs text-slate-500 mt-0.5">{notif.message}</p>
+
+                {/* Inline actions for friend requests */}
+                {notif.type === "FRIEND_REQUEST" && !notif.read && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      onClick={(e) => handleAcceptFriend(notif, e)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                    >
+                      <Check className="w-3 h-3" /> Accept
+                    </button>
+                    <button
+                      onClick={(e) => handleRejectFriend(notif, e)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
+                    >
+                      <X className="w-3 h-3" /> Decline
+                    </button>
+                  </div>
+                )}
+
+                {/* Action URL indicator */}
+                {notif.actionUrl && notif.type !== "FRIEND_REQUEST" && (
+                  <p className="text-[10px] text-indigo-500 mt-1.5 flex items-center gap-0.5 font-semibold">
+                    <ExternalLink className="w-2.5 h-2.5" /> View
+                  </p>
+                )}
+
                 <p className="text-[10px] text-slate-400 mt-1">
                   {new Date(notif.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                 </p>

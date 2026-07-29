@@ -30,6 +30,26 @@ export class GoogleAuthService {
       picture: payload.picture,
     };
   }
+
+  async verifyAccessToken(accessToken: string): Promise<GoogleTokenPayload> {
+    const response = await fetch(
+      "https://www.googleapis.com/oauth2/v3/userinfo",
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!response.ok) {
+      throw new Error("Invalid Google access token");
+    }
+
+    const payload = await response.json() as Record<string, string>;
+
+    return {
+      sub: payload.sub,
+      email: payload.email,
+      name: payload.name,
+      picture: payload.picture,
+    };
+  }
 }
 
 export const googleAuthService = new GoogleAuthService();

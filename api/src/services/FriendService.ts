@@ -34,11 +34,11 @@ export class FriendService {
       }
     }
 
-    await friendshipRepository.create(requesterId, recipientId);
+    const friendship = await friendshipRepository.create(requesterId, recipientId);
 
     const requester = await userRepository.findById(requesterId);
     if (requester) {
-      await notificationService.notifyFriendRequest(recipientId, requester.displayName, requesterId);
+      await notificationService.notifyFriendRequest(recipientId, requester.displayName, requesterId, friendship.id);
     }
   }
 

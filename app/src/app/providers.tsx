@@ -2,8 +2,9 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { RouteLoader } from "@/components/route-loader";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -23,6 +24,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
         {children}
+        <Suspense fallback={null}>
+          <RouteLoader />
+        </Suspense>
         <Toaster position="top-right" richColors />
       </ThemeProvider>
     </QueryClientProvider>

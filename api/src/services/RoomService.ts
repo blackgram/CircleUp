@@ -204,6 +204,13 @@ export class RoomService {
     return this.toResponse(room);
   }
 
+  async getPublicRooms(): Promise<RoomResponse[]> {
+    const all = await roomStorage.getAllRooms();
+    return all
+      .filter((r) => !r.settings.privateRoom && r.status === RoomStatus.WAITING && r.players.length < r.settings.maxPlayers)
+      .map((r) => this.toResponse(r));
+  }
+
   private toResponse(room: Room): RoomResponse {
     return {
       roomCode: room.roomCode,

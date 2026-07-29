@@ -95,6 +95,9 @@ export const roomsApi = {
   getByCode: (roomCode: string) =>
     api.get<ApiResponse<RoomResponse>>(`/api/rooms/${roomCode}`),
 
+  getPublic: () =>
+    api.get<ApiResponse<RoomResponse[]>>("/api/rooms/public"),
+
   updateSettings: (roomCode: string, data: Record<string, unknown>) =>
     api.patch<ApiResponse<RoomResponse>>(`/api/rooms/${roomCode}/settings`, data),
 
