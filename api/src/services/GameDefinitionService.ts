@@ -1,4 +1,5 @@
 import { gameDefinitionRepository } from "../repositories/GameDefinitionRepository";
+import { gameEngine } from "../game-engine";
 import { GameResponse } from "../dto/responses";
 import { IGameDefinition } from "../models/GameDefinition";
 
@@ -92,9 +93,17 @@ export class GameDefinitionService {
   }
 
   private toDetailResponse(g: IGameDefinition): GameDetailResponse {
+    // Merge adapter's settingsSchema if DB has none
+    let schema = g.settingsSchema;
+    if (!schema || schema.length === 0) {
+      const adapter = gameEngine.get(g.slug);
+      if (adapter && adapter.settingsSchema.length > 0) {
+        schema = adapter.settingsSchema as unknown as Record<string, unknown>[];
+      }
+    }
     return {
       ...this.toResponse(g),
-      settingsSchema: g.settingsSchema,
+      settingsSchema: schema,
       version: g.version,
     };
   }

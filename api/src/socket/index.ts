@@ -6,6 +6,13 @@ import { SocketManager } from "./SocketManager";
 import { logger } from "../utils/logger";
 import { ClientToServerEvents, ServerToClientEvents, SocketData } from "./events";
 
+let socketManagerInstance: SocketManager | null = null;
+
+export function getSocketManager(): SocketManager {
+  if (!socketManagerInstance) throw new Error("SocketManager not initialized");
+  return socketManagerInstance;
+}
+
 export function registerSocketHandlers(
   io: Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>
 ): void {
@@ -13,6 +20,7 @@ export function registerSocketHandlers(
   io.use(socketAuthMiddleware as any);
 
   const socketManager = new SocketManager(io as any);
+  socketManagerInstance = socketManager;
   const roomGateway = new RoomGateway(io as any, socketManager);
   const gameGateway = new GameGateway(io as any, socketManager);
 

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { roomService } from "../services/RoomService";
+import { getSocketManager } from "../socket";
 import { ApiResponse, RoomResponse } from "../dto/responses";
 import { GameSession } from "../types";
 
@@ -77,13 +78,23 @@ export class RoomController {
   async updateSettings(req: Request, res: Response) {
     try {
       const userId = (req as any).userId;
+      const roomCode = req.params.roomCode as string;
       const { gameSlug, maxPlayers, privateRoom, gameOptions } = req.body;
-      const data = await roomService.updateSettings(userId, req.params.roomCode as string, {
+      const data = await roomService.updateSettings(userId, roomCode, {
         ...(gameSlug !== undefined && { gameSlug }),
         ...(maxPlayers !== undefined && { maxPlayers }),
         ...(privateRoom !== undefined && { privateRoom }),
         ...(gameOptions !== undefined && { gameOptions }),
       });
+
+      // Broadcast updated room state to all players
+      try {
+        const sm = getSocketManager();
+        await sm.broadcastRoomState(roomCode);
+      } catch {
+        // Socket not initialized or broadcast failed — non-fatal
+      }
+
       const response: ApiResponse<RoomResponse> = { success: true, data };
       res.json(response);
     } catch (err: any) {

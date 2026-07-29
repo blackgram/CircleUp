@@ -38,6 +38,34 @@ export class SocketManager {
   }
 
   async broadcastGameState(roomCode: string, session: GameSession): Promise<void> {
+    const roundData = this.getPublicRoundData(session);
+    const data: Record<string, unknown> | undefined = roundData
+      ? { ...roundData, ...(session.metadata.exposedRecap ? { exposedRecap: session.metadata.exposedRecap } : {}) }
+      : session.metadata.exposedRecap ? { exposedRecap: session.metadata.exposedRecap } : undefined;
+
+    const payload: GameStatePayload = {
+      eventId: eventId(),
+      sessionId: session.id,
+      phase: session.phase,
+      currentRound: session.currentRound,
+      totalRounds: session.totalRounds,
+      scores: session.scores,
+      endsAt: session.metadata.roundEndsAt as string | undefined,
+      version: session.metadata.version as number || 0,
+      data,
+    };
+
+    this.io.to(roomCode).emit("game:update", payload);
+    logger.debug({ roomCode, version: payload.version, phase: session.phase }, "Broadcast game:update");
+  }
+
+  async emitGameStateToSocket(socketId: string, roomCode: string): Promise<void> {
+    const room = await roomStorage.getRoom(roomCode);
+    if (!room?.sessionId) return;
+
+    const session = await roomStorage.getSession(room.sessionId);
+    if (!session || session.status === "FINISHED") return;
+
     const payload: GameStatePayload = {
       eventId: eventId(),
       sessionId: session.id,
@@ -49,8 +77,8 @@ export class SocketManager {
       data: this.getPublicRoundData(session),
     };
 
-    this.io.to(roomCode).emit("game:update", payload);
-    logger.debug({ roomCode, version: payload.version, phase: session.phase }, "Broadcast game:update");
+    this.io.to(socketId).emit("game:update", payload);
+    logger.debug({ socketId, roomCode, phase: session.phase }, "Sent game:update to reconnected player");
   }
 
   broadcastGameEnded(roomCode: string, session: GameSession): void {

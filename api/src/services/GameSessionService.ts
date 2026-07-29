@@ -113,10 +113,10 @@ export class GameSessionService {
 
     session.phase = "RESULTS";
 
-    // Check if game is over
+    // Check if game is over — mark status but keep phase as RESULTS
+    // so the last round's results are shown before the final screen
     if (session.currentRound >= session.totalRounds) {
       session.status = "FINISHED";
-      session.phase = "FINISHED";
       session.endedAt = new Date();
     }
 

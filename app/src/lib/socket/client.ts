@@ -29,6 +29,15 @@ interface SocketResponse {
 export type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socket: AppSocket | null = null;
+let currentRoomCode: string | null = null;
+
+export function setCurrentRoomCode(roomCode: string | null): void {
+  currentRoomCode = roomCode;
+}
+
+export function getCurrentRoomCode(): string | null {
+  return currentRoomCode;
+}
 
 export function getSocket(): AppSocket {
   if (!socket) {
@@ -38,9 +47,9 @@ export function getSocket(): AppSocket {
       auth: { token },
       autoConnect: false,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10000,
     });
   }
 
@@ -49,33 +58,59 @@ export function getSocket(): AppSocket {
 
 export function connectSocket(): void {
   const s = getSocket();
+
+  // Remove any previous listeners to avoid duplicates on re-calls
+  s.off("connect");
+  s.off("disconnect");
+  s.off("connect_error");
+  s.off("error");
+
+  s.on("connect", () => {
+    console.log("[Socket] Connected, id:", s.id);
+
+    // Auto-rejoin room on reconnection (e.g. after page reload or network drop)
+    if (currentRoomCode) {
+      console.log("[Socket] Auto-rejoining room:", currentRoomCode);
+      s.emit("room:join", { roomCode: currentRoomCode }, (res) => {
+        if (res.success) {
+          console.log("[Socket] Rejoined room:", currentRoomCode);
+        } else {
+          console.error("[Socket] Failed to rejoin room:", res.message);
+        }
+      });
+    }
+  });
+
+  s.on("disconnect", (reason) => {
+    console.log("[Socket] Disconnected, reason:", reason);
+  });
+
+  s.on("connect_error", (err) => {
+    console.error("[Socket] Connection error:", err.message);
+    // Refresh token on auth errors and retry
+    if (err.message === "Invalid token" || err.message === "Token revoked") {
+      const token = useAuthStore.getState().accessToken;
+      if (token) {
+        s.auth = { token };
+      }
+    }
+  });
+
+  s.on("error", (payload) => {
+    console.error("[Socket] Server error:", payload.message);
+  });
+
   if (!s.connected) {
     // Update token before connecting
     const token = useAuthStore.getState().accessToken;
     s.auth = { token };
-
-    s.on("connect", () => {
-      console.log("[Socket] Connected, id:", s.id);
-    });
-    s.on("disconnect", (reason) => {
-      console.log("[Socket] Disconnected, reason:", reason);
-    });
-    s.on("connect_error", (err) => {
-      console.error("[Socket] Connection error:", err.message);
-    });
-    s.on("room:update", (payload) => {
-      console.log("[Socket] room:update received:", payload);
-    });
-    s.on("error", (payload) => {
-      console.error("[Socket] Server error:", payload.message);
-    });
-
     s.connect();
   }
 }
 
 export function disconnectSocket(): void {
   if (socket) {
+    currentRoomCode = null;
     socket.disconnect();
     socket = null;
   }

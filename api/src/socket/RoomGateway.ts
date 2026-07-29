@@ -17,7 +17,7 @@ export class RoomGateway {
 
       // Leave any previous room
       const previousRoom = (socket.data as SocketData).roomCode;
-      if (previousRoom) {
+      if (previousRoom && previousRoom !== roomCode) {
         socket.leave(previousRoom);
       }
 
@@ -25,18 +25,24 @@ export class RoomGateway {
       socket.join(roomCode);
       (socket.data as SocketData).roomCode = roomCode;
 
-      // Update socket ID in storage
+      // Update socket ID and connected status in storage
       const room = await roomStorage.getRoom(roomCode);
       if (room) {
         const player = room.players.find((p) => p.userId === userId);
         if (player) {
           player.socketId = socket.id;
+          player.connected = true;
           await roomStorage.updateRoom(roomCode, room);
         }
-      }
 
-      // Broadcast full room state to everyone (snapshot approach)
-      await this.socketManager.broadcastRoomState(roomCode);
+        // Broadcast full room state to everyone (snapshot approach)
+        await this.socketManager.broadcastRoomState(roomCode);
+
+        // If a game is in progress, send current game state to the reconnecting player
+        if (room.status === "PLAYING" && room.sessionId) {
+          await this.socketManager.emitGameStateToSocket(socket.id, roomCode);
+        }
+      }
 
       logger.info({ userId, roomCode }, "Player joined room");
       return { success: true };

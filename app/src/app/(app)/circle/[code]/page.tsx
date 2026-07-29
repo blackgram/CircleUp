@@ -4,23 +4,27 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { roomsApi } from "@/lib/api/services";
-import { useEnabledGames } from "@/hooks/useGames";
-import { getSocket } from "@/lib/socket/client";
+import { useEnabledGames, useGameBySlug } from "@/hooks/useGames";
+import { getSocket, setCurrentRoomCode } from "@/lib/socket/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, Users, Play, LogOut, Crown, Check, Gamepad2 } from "lucide-react";
+import { Copy, Users, Play, LogOut, Crown, Check, Gamepad2, Settings, ChevronDown, Trophy } from "lucide-react";
 import { toast } from "sonner";
-import type { RoomResponse, RoomStatePayload } from "@/types";
+import { GameView } from "@/features/games";
+import type { RoomResponse, RoomStatePayload, GameStatePayload, SettingDefinition } from "@/types";
 
 export default function CirclePage() {
   const params = useParams();
   const roomCode = params.code as string;
   const { user } = useAuthStore();
   const [room, setRoom] = useState<RoomResponse | null>(null);
+  const [gameState, setGameState] = useState<GameStatePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [selectingGame, setSelectingGame] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
   const { data: enabledGames } = useEnabledGames();
+  const { data: gameDetail } = useGameBySlug(room?.gameSlug || "");
 
   useEffect(() => {
     loadRoom();
@@ -30,16 +34,15 @@ export default function CirclePage() {
   useEffect(() => {
     const socket = getSocket();
 
-    console.log("[CirclePage] Socket connected?", socket.connected, "id:", socket.id);
+    // Track current room for auto-rejoin on reconnect
+    setCurrentRoomCode(roomCode);
 
     function handleRoomUpdate(payload: RoomStatePayload) {
       console.log("[CirclePage] room:update received:", JSON.stringify(payload, null, 2));
       // Detect players who left
       setRoom((prev) => {
         if (!prev) return prev;
-        const prevIds = prev.players.map((p) => p.userId);
-        const newIds = payload.players.map((p) => p.userId);
-        const left = prev.players.filter((p) => !newIds.includes(p.userId));
+        const left = prev.players.filter((p) => !payload.players.some((np) => np.userId === p.userId));
         left.forEach((p) => {
           toast.info(`${p.nickname} left the circle`);
         });
@@ -48,14 +51,22 @@ export default function CirclePage() {
           players: payload.players as RoomResponse["players"],
           status: payload.status as RoomResponse["status"],
           gameSlug: payload.gameSlug,
+          settings: payload.settings as unknown as RoomResponse["settings"],
         };
       });
     }
 
-    socket.on("room:update", handleRoomUpdate);
+    function handleGameUpdate(payload: GameStatePayload) {
+      console.log("[CirclePage] game:update received:", payload.phase, "round:", payload.currentRound);
+      setGameState(payload);
+    }
 
-    // Emit room:join to subscribe to this room's socket channel
-    if (socket.connected) {
+    function handleGameEnded(payload: { finalScores: { userId: string; points: number }[]; winner?: string }) {
+      console.log("[CirclePage] game:ended received");
+      toast.success("Game finished!");
+    }
+
+    function joinRoom() {
       console.log("[CirclePage] Emitting room:join for:", roomCode);
       socket.emit("room:join", { roomCode }, (res) => {
         console.log("[CirclePage] room:join ack:", res);
@@ -63,30 +74,23 @@ export default function CirclePage() {
           console.error("[CirclePage] Failed to join room socket:", res.message);
         }
       });
-    } else {
-      console.log("[CirclePage] Socket not connected, waiting for connect event...");
-      const onConnect = () => {
-        console.log("[CirclePage] Socket connected, now emitting room:join for:", roomCode);
-        socket.emit("room:join", { roomCode }, (res) => {
-          console.log("[CirclePage] room:join ack:", res);
-          if (!res.success) {
-            console.error("[CirclePage] Failed to join room socket:", res.message);
-          }
-        });
-      };
-      socket.on("connect", onConnect);
-      return () => {
-        socket.off("connect", onConnect);
-        socket.off("room:update", handleRoomUpdate);
-      };
+    }
+
+    socket.on("room:update", handleRoomUpdate);
+    socket.on("game:update", handleGameUpdate);
+    socket.on("game:ended", handleGameEnded);
+
+    // Join immediately if connected, otherwise the connect handler
+    // in connectSocket() will auto-rejoin via currentRoomCode
+    if (socket.connected) {
+      joinRoom();
     }
 
     return () => {
       socket.off("room:update", handleRoomUpdate);
-      // Optionally leave on unmount
-      socket.emit("room:leave", (res) => {
-        console.log("[CirclePage] room:leave ack:", res);
-      });
+      socket.off("game:update", handleGameUpdate);
+      socket.off("game:ended", handleGameEnded);
+      setCurrentRoomCode(null);
     };
   }, [roomCode]);
 
@@ -126,18 +130,15 @@ export default function CirclePage() {
     } catch {}
   }
 
-  async function handleStart() {
-    try {
-      const { data } = await roomsApi.start(roomCode);
-      if (data.success) {
+  function handleStart() {
+    const socket = getSocket();
+    socket.emit("game:start", (res) => {
+      if (res.success) {
         toast.success("Game starting!");
-        loadRoom();
       } else {
-        toast.error(data.message || "Cannot start game");
+        toast.error(res.message || "Cannot start game");
       }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Cannot start game");
-    }
+    });
   }
 
   async function handleSelectGame(slug: string) {
@@ -152,6 +153,35 @@ export default function CirclePage() {
       toast.error(err.response?.data?.message || "Failed to select game");
     } finally {
       setSelectingGame(false);
+    }
+  }
+
+  async function handleGameOptionChange(key: string, value: unknown) {
+    setSavingSettings(true);
+    try {
+      const updatedOptions = { ...room?.settings.gameOptions, [key]: value };
+      const { data } = await roomsApi.updateSettings(roomCode, { gameOptions: updatedOptions });
+      if (data.success && data.data) {
+        setRoom(data.data);
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to update setting");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  async function handleRoomSettingChange(updates: Record<string, unknown>) {
+    setSavingSettings(true);
+    try {
+      const { data } = await roomsApi.updateSettings(roomCode, updates);
+      if (data.success && data.data) {
+        setRoom(data.data);
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to update setting");
+    } finally {
+      setSavingSettings(false);
     }
   }
 
@@ -175,7 +205,22 @@ export default function CirclePage() {
   }
 
   const isHost = user?.id === room.hostId;
+  const isPlaying = room.status === "PLAYING" || room.status === "FINISHED";
 
+  // ── GAME SCREEN ──
+  if (isPlaying) {
+    return (
+      <GameScreen
+        room={room}
+        gameState={gameState}
+        isHost={isHost}
+        currentUserId={user?.id || ""}
+        onLeave={handleLeave}
+      />
+    );
+  }
+
+  // ── LOBBY SCREEN ──
   return (
     <div className="space-y-6 max-w-3xl mx-auto pb-12">
       {/* Room Header */}
@@ -191,16 +236,9 @@ export default function CirclePage() {
             </div>
           </div>
           <div className="text-right">
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-              room.status === "WAITING" ? "bg-amber-50 text-amber-700" :
-              room.status === "PLAYING" ? "bg-emerald-50 text-emerald-700" :
-              "bg-slate-100 text-slate-600"
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${
-                room.status === "WAITING" ? "bg-amber-500 animate-pulse" :
-                room.status === "PLAYING" ? "bg-emerald-500" : "bg-slate-400"
-              }`} />
-              {room.status}
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              WAITING
             </span>
           </div>
         </div>
@@ -241,8 +279,8 @@ export default function CirclePage() {
         </div>
       </div>
 
-      {/* Game Selection (host only, while waiting) */}
-      {isHost && room.status === "WAITING" && (
+      {/* Game Selection (host only) */}
+      {isHost && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
           <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
             <Gamepad2 className="w-4 h-4 text-indigo-500" />
@@ -283,21 +321,116 @@ export default function CirclePage() {
         </div>
       )}
 
-      {/* Show selected game for non-host */}
+      {/* Game Settings (host only, after game selected) */}
+      {isHost && room.gameSlug && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+          <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <Settings className="w-4 h-4 text-indigo-500" />
+            Game Settings
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1.5">Rounds</label>
+              <div className="flex items-center gap-3">
+                <input type="range" min={1} max={30} value={Number(room.settings.gameOptions.rounds) || 10} onChange={(e) => handleGameOptionChange("rounds", Number(e.target.value))} disabled={savingSettings} className="flex-1 accent-indigo-600 disabled:opacity-50" />
+                <span className="text-sm font-bold text-slate-900 w-10 text-center tabular-nums">{Number(room.settings.gameOptions.rounds) || 10}</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1.5">Max Players</label>
+              <div className="flex items-center gap-3">
+                <input type="range" min={2} max={gameDetail?.maxPlayers || 16} value={room.settings.maxPlayers} onChange={(e) => handleRoomSettingChange({ maxPlayers: Number(e.target.value) })} disabled={savingSettings} className="flex-1 accent-indigo-600 disabled:opacity-50" />
+                <span className="text-sm font-bold text-slate-900 w-10 text-center tabular-nums">{room.settings.maxPlayers}</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-slate-700">Private Room</label>
+              <button onClick={() => handleRoomSettingChange({ privateRoom: !room.settings.privateRoom })} disabled={savingSettings} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${room.settings.privateRoom ? "bg-indigo-600" : "bg-slate-200"} disabled:opacity-50`}>
+                <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${room.settings.privateRoom ? "translate-x-6" : "translate-x-1"}`} />
+              </button>
+            </div>
+            {gameDetail?.settingsSchema && gameDetail.settingsSchema.length > 0 && (
+              <>
+                <div className="border-t border-slate-100 pt-3 mt-3">
+                  <p className="text-xs font-bold text-slate-400 uppercase mb-3">{gameDetail.name} Options</p>
+                </div>
+                {gameDetail.settingsSchema.map((setting: SettingDefinition) => {
+                  const currentValue = room.settings.gameOptions[setting.key] ?? setting.default;
+                  return (
+                    <div key={setting.key}>
+                      <label className="text-sm font-semibold text-slate-700 block mb-1.5">{setting.label}</label>
+                      {setting.type === "boolean" && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-500">{currentValue ? "On" : "Off"}</span>
+                          <button onClick={() => handleGameOptionChange(setting.key, !currentValue)} disabled={savingSettings} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${currentValue ? "bg-indigo-600" : "bg-slate-200"} disabled:opacity-50`}>
+                            <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${currentValue ? "translate-x-6" : "translate-x-1"}`} />
+                          </button>
+                        </div>
+                      )}
+                      {setting.type === "number" && (
+                        <div className="flex items-center gap-3">
+                          <input type="range" min={setting.min ?? 1} max={setting.max ?? 100} value={Number(currentValue) || setting.min || 1} onChange={(e) => handleGameOptionChange(setting.key, Number(e.target.value))} disabled={savingSettings} className="flex-1 accent-indigo-600 disabled:opacity-50" />
+                          <span className="text-sm font-bold text-slate-900 w-10 text-center tabular-nums">{Number(currentValue) || setting.min || 1}</span>
+                        </div>
+                      )}
+                      {setting.type === "select" && setting.options && (
+                        <select value={String(currentValue ?? "")} onChange={(e) => handleGameOptionChange(setting.key, e.target.value)} disabled={savingSettings} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50">
+                          {setting.options.map((opt) => (<option key={String(opt.value)} value={String(opt.value)}>{opt.label}</option>))}
+                        </select>
+                      )}
+                      {setting.type === "string" && !setting.options && (
+                        <input type="text" value={String(currentValue ?? "")} onChange={(e) => handleGameOptionChange(setting.key, e.target.value)} disabled={savingSettings} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50" />
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Show selected game & settings for non-host */}
       {!isHost && room.gameSlug && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
           <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
             <Gamepad2 className="w-4 h-4 text-indigo-500" />
             Selected Game
           </h3>
-          <p className="text-sm font-bold text-indigo-600">{room.gameSlug}</p>
+          <p className="text-sm font-bold text-indigo-600 mb-3">
+            {enabledGames?.find((g) => g.slug === room.gameSlug)?.name || room.gameSlug}
+          </p>
+          <div className="space-y-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">Rounds</span>
+              <span className="font-semibold text-slate-900">{Number(room.settings.gameOptions.rounds) || 10}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">Max Players</span>
+              <span className="font-semibold text-slate-900">{room.settings.maxPlayers}</span>
+            </div>
+            {gameDetail?.settingsSchema && gameDetail.settingsSchema.map((setting: SettingDefinition) => {
+              const val = room.settings.gameOptions[setting.key] ?? setting.default;
+              return (
+                <div key={setting.key} className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">{setting.label}</span>
+                  <span className="font-semibold text-slate-900">
+                    {setting.type === "boolean" ? (val ? "On" : "Off") :
+                     setting.type === "select" && setting.options
+                       ? (setting.options.find((o) => String(o.value) === String(val))?.label ?? String(val))
+                       : String(val)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
       {/* Actions */}
       <div className="flex items-center gap-3">
-        {isHost && room.status === "WAITING" && (
-          <Button onClick={handleStart} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex-1">
+        {isHost && (
+          <Button onClick={handleStart} disabled={!room.gameSlug} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex-1 disabled:opacity-50">
             <Play className="w-4 h-4 mr-2" /> Start Game
           </Button>
         )}
@@ -305,6 +438,118 @@ export default function CirclePage() {
           <LogOut className="w-4 h-4 mr-2" /> Leave
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ── GAME SCREEN COMPONENT ──
+function GameScreen({
+  room,
+  gameState,
+  isHost,
+  currentUserId,
+  onLeave,
+}: {
+  room: RoomResponse;
+  gameState: GameStatePayload | null;
+  isHost: boolean;
+  currentUserId: string;
+  onLeave: () => void;
+}) {
+  const [showPlayers, setShowPlayers] = useState(false);
+  const [showScores, setShowScores] = useState(false);
+
+  return (
+    <div className="max-w-3xl mx-auto pb-12 space-y-4">
+      {/* Compact game header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">{room.roomCode}</span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            {room.status === "FINISHED" ? "FINISHED" : "LIVE"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowScores(!showScores)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${showScores ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          >
+            <Trophy className="w-3.5 h-3.5" /> Scores
+          </button>
+          <button
+            onClick={() => setShowPlayers(!showPlayers)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${showPlayers ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          >
+            <Users className="w-3.5 h-3.5" /> {room.players.length}
+          </button>
+          <button
+            onClick={onLeave}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Collapsible Scores Panel */}
+      {showScores && gameState && (
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 animate-in slide-in-from-top-2">
+          <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Leaderboard</h4>
+          <div className="space-y-1.5">
+            {[...gameState.scores].sort((a, b) => b.points - a.points).map((s, idx) => (
+              <div key={s.userId} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs w-5 text-center">
+                    {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `${idx + 1}.`}
+                  </span>
+                  <span className="text-sm font-medium text-slate-700">
+                    {room.players.find((p) => p.userId === s.userId)?.nickname || s.userId.slice(0, 6)}
+                  </span>
+                </div>
+                <span className="text-sm font-bold text-indigo-600">{s.points}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Collapsible Players Panel */}
+      {showPlayers && (
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 animate-in slide-in-from-top-2">
+          <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Players</h4>
+          <div className="flex flex-wrap gap-2">
+            {room.players.map((player) => (
+              <div key={player.userId} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50">
+                <span className={`w-2 h-2 rounded-full ${player.connected ? "bg-emerald-500" : "bg-slate-300"}`} />
+                <span className="text-xs font-semibold text-slate-700">{player.nickname}</span>
+                {player.userId === room.hostId && <Crown className="w-3 h-3 text-amber-500" />}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Game View */}
+      {room.gameSlug && gameState ? (
+        <GameView
+          gameSlug={room.gameSlug}
+          room={room}
+          gameState={gameState}
+          isHost={isHost}
+          currentUserId={currentUserId}
+          onReturnToLobby={() => {
+            const socket = getSocket();
+            socket.emit("game:action", { action: "return_to_lobby", payload: {} }, (res) => {
+              if (!res.success) console.error("Failed to return to lobby:", res.message);
+            });
+          }}
+        />
+      ) : (
+        <div className="bg-white rounded-2xl p-8 text-center border border-slate-100 shadow-sm">
+          <p className="text-sm font-bold text-slate-700">Waiting for game state...</p>
+        </div>
+      )}
     </div>
   );
 }

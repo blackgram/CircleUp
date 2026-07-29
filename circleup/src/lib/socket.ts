@@ -8,8 +8,9 @@ export function getSocket(): Socket {
     socket = io(window.location.origin, {
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
     });
 
     socket.on('connect', () => {

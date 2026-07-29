@@ -53,15 +53,17 @@ export class RoomService {
     const room = await roomStorage.getRoom(roomCode);
     if (!room) throw new Error("Room not found");
 
-    if (room.status !== RoomStatus.WAITING) {
-      throw new Error("Room is not accepting players");
-    }
-
+    // Allow existing players to reconnect regardless of room status
     const existing = room.players.find((p) => p.userId === userId);
     if (existing) {
       existing.connected = true;
       await roomStorage.updateRoom(roomCode, room);
       return this.toResponse(room);
+    }
+
+    // New players can only join during WAITING
+    if (room.status !== RoomStatus.WAITING) {
+      throw new Error("Room is not accepting players");
     }
 
     if (room.players.length >= room.settings.maxPlayers) {
@@ -186,6 +188,20 @@ export class RoomService {
     room.status = RoomStatus.FINISHED;
     room.sessionId = undefined;
     await roomStorage.updateRoom(roomCode, room);
+  }
+
+  async returnToLobby(userId: string, roomCode: string): Promise<RoomResponse> {
+    const room = await roomStorage.getRoom(roomCode);
+    if (!room) throw new Error("Room not found");
+    if (room.hostId !== userId) throw new Error("Only the host can return to lobby");
+
+    room.status = RoomStatus.WAITING;
+    room.sessionId = undefined;
+    for (const player of room.players) {
+      player.ready = false;
+    }
+    await roomStorage.updateRoom(roomCode, room);
+    return this.toResponse(room);
   }
 
   private toResponse(room: Room): RoomResponse {
