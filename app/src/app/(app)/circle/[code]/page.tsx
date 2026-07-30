@@ -8,7 +8,7 @@ import { useEnabledGames, useGameBySlug } from "@/hooks/useGames";
 import { getSocket, setCurrentRoomCode } from "@/lib/socket/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, Users, Play, LogOut, Crown, Check, Gamepad2, Settings, ChevronDown, Trophy } from "lucide-react";
+import { Copy, Users, Play, LogOut, Crown, Check, Gamepad2, Settings, ChevronDown, Trophy, X } from "lucide-react";
 import { toast } from "sonner";
 import { GameView } from "@/features/games";
 import type { RoomResponse, RoomStatePayload, GameStatePayload, SettingDefinition } from "@/types";
@@ -70,6 +70,12 @@ export default function CirclePage() {
       toast.success("Game finished!");
     }
 
+    function handleKicked(payload: { message: string }) {
+      toast.error(payload.message);
+      setCurrentRoomCode(null);
+      window.location.href = "/dashboard";
+    }
+
     function joinRoom() {
       console.log("[CirclePage] Emitting room:join for:", roomCode);
       socket.emit("room:join", { roomCode }, (res) => {
@@ -89,6 +95,7 @@ export default function CirclePage() {
     socket.on("room:update", handleRoomUpdate);
     socket.on("game:update", handleGameUpdate);
     socket.on("game:ended", handleGameEnded);
+    socket.on("room:kicked", handleKicked);
     socket.on("connect", onConnect);
 
     // Join immediately if connected, otherwise the connect listener above will handle it
@@ -100,6 +107,7 @@ export default function CirclePage() {
       socket.off("room:update", handleRoomUpdate);
       socket.off("game:update", handleGameUpdate);
       socket.off("game:ended", handleGameEnded);
+      socket.off("room:kicked", handleKicked);
       socket.off("connect", onConnect);
       setCurrentRoomCode(null);
     };
@@ -157,6 +165,17 @@ export default function CirclePage() {
     socket.emit("player:ready", (res) => {
       if (!res.success) {
         toast.error(res.message || "Failed to toggle ready");
+      }
+    });
+  }
+
+  function handleKickPlayer(targetUserId: string, nickname: string) {
+    const socket = getSocket();
+    socket.emit("room:kick", { userId: targetUserId }, (res) => {
+      if (res.success) {
+        toast.success(`${nickname} was kicked`);
+      } else {
+        toast.error(res.message || "Failed to kick player");
       }
     });
   }
@@ -322,11 +341,22 @@ export default function CirclePage() {
                     {player.ready ? "✓ Ready" : "Ready Up"}
                   </button>
                 ) : (
-                  <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
-                    player.ready ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
-                  }`}>
-                    {player.ready ? "Ready" : "Not Ready"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
+                      player.ready ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                    }`}>
+                      {player.ready ? "Ready" : "Not Ready"}
+                    </span>
+                    {isHost && (
+                      <button
+                        onClick={() => handleKickPlayer(player.userId, player.nickname)}
+                        className="text-slate-300 hover:text-rose-500 transition-colors p-1"
+                        title="Kick player"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             );

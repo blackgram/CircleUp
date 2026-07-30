@@ -109,6 +109,19 @@ export class RoomService {
     await roomStorage.updateRoom(roomCode, room);
   }
 
+  async kick(hostId: string, targetUserId: string, roomCode: string): Promise<void> {
+    const room = await roomStorage.getRoom(roomCode);
+    if (!room) throw new Error("Room not found");
+    if (room.hostId !== hostId) throw new Error("Only the host can kick players");
+    if (targetUserId === hostId) throw new Error("Cannot kick yourself");
+
+    const target = room.players.find((p) => p.userId === targetUserId);
+    if (!target) throw new Error("Player not in room");
+
+    room.players = room.players.filter((p) => p.userId !== targetUserId);
+    await roomStorage.updateRoom(roomCode, room);
+  }
+
   async getByCode(roomCode: string): Promise<RoomResponse> {
     const room = await roomStorage.getRoom(roomCode);
     if (!room) throw new Error("Room not found");

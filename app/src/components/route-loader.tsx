@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Image from "next/image";
 
@@ -8,52 +8,33 @@ export function RouteLoader() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
-  const [prevPath, setPrevPath] = useState("");
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Hide loader when route actually changes
   useEffect(() => {
-    const currentPath = pathname + searchParams.toString();
-    if (prevPath && prevPath !== currentPath) {
-      // Route changed — hide loader
-      setLoading(false);
-    }
-    setPrevPath(currentPath);
+    setLoading(false);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }, [pathname, searchParams]);
 
-  // Intercept link clicks to show loader
+  // Intercept link clicks to show loader (only real navigations)
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      const anchor = (e.target as HTMLElement).closest("a");
-      if (!anchor) return;
-      const href = anchor.getAttribute("href");
-      if (!href || href.startsWith("http") || href.startsWith("#") || href === pathname) return;
-      // Internal navigation — show loader
-      setLoading(true);
+      // Wait a tick to see if preventDefault was called
+      setTimeout(() => {
+        if (e.defaultPrevented) return;
+        const anchor = (e.target as HTMLElement).closest("a");
+        if (!anchor) return;
+        const href = anchor.getAttribute("href");
+        if (!href || href.startsWith("http") || href.startsWith("#") || href === pathname) return;
+        setLoading(true);
+        // Safety timeout — hide after 4s if route never changed
+        timeoutRef.current = setTimeout(() => setLoading(false), 4000);
+      }, 0);
     }
 
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
   }, [pathname]);
-
-  // Also intercept programmatic navigation (router.push)
-  useEffect(() => {
-    const originalPushState = history.pushState.bind(history);
-    const originalReplaceState = history.replaceState.bind(history);
-
-    history.pushState = function (...args) {
-      setLoading(true);
-      return originalPushState(...args);
-    };
-
-    history.replaceState = function (...args) {
-      setLoading(true);
-      return originalReplaceState(...args);
-    };
-
-    return () => {
-      history.pushState = originalPushState;
-      history.replaceState = originalReplaceState;
-    };
-  }, []);
 
   if (!loading) return null;
 

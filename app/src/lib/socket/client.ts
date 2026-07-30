@@ -6,6 +6,7 @@ const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 interface ServerToClientEvents {
   "room:update": (payload: RoomStatePayload) => void;
+  "room:kicked": (payload: { message: string }) => void;
   "game:update": (payload: GameStatePayload) => void;
   "game:ended": (payload: GameEndedPayload) => void;
   "notification:new": (payload: unknown) => void;
@@ -15,6 +16,7 @@ interface ServerToClientEvents {
 interface ClientToServerEvents {
   "room:join": (payload: { roomCode: string }, ack: (res: SocketResponse) => void) => void;
   "room:leave": (ack: (res: SocketResponse) => void) => void;
+  "room:kick": (payload: { userId: string }, ack: (res: SocketResponse) => void) => void;
   "player:ready": (ack: (res: SocketResponse) => void) => void;
   "game:start": (ack: (res: SocketResponse) => void) => void;
   "game:action": (payload: { action: string; payload: Record<string, unknown> }, ack: (res: SocketResponse) => void) => void;

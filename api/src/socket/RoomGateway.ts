@@ -74,6 +74,39 @@ export class RoomGateway {
     }
   }
 
+  async handleKick(socket: Socket, payload: { userId: string }): Promise<SocketResponse> {
+    const { userId, roomCode } = socket.data as SocketData;
+    const targetUserId = payload.userId;
+
+    if (!roomCode) {
+      return { success: false, message: "Not in a room" };
+    }
+
+    try {
+      await roomService.kick(userId, targetUserId, roomCode);
+
+      // Notify the kicked player's socket
+      const room = await roomStorage.getRoom(roomCode);
+      // Find the kicked player's socket and remove them from the room channel
+      const sockets = await this.io.in(roomCode).fetchSockets();
+      for (const s of sockets) {
+        if ((s.data as SocketData).userId === targetUserId) {
+          s.emit("room:kicked", { message: "You were kicked from the circle" });
+          s.leave(roomCode);
+          (s.data as SocketData).roomCode = undefined;
+        }
+      }
+
+      // Broadcast updated room state to remaining players
+      await this.socketManager.broadcastRoomState(roomCode);
+
+      logger.info({ hostId: userId, targetUserId, roomCode }, "Player kicked");
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
   async handleReady(socket: Socket): Promise<SocketResponse> {
     const { userId, roomCode } = socket.data as SocketData;
 

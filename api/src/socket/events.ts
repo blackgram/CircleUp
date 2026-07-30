@@ -3,6 +3,7 @@
 export interface ClientToServerEvents {
   "room:join": (payload: { roomCode: string }, ack: (res: SocketResponse) => void) => void;
   "room:leave": (ack: (res: SocketResponse) => void) => void;
+  "room:kick": (payload: { userId: string }, ack: (res: SocketResponse) => void) => void;
 
   "player:ready": (ack: (res: SocketResponse) => void) => void;
 
@@ -14,6 +15,7 @@ export interface ClientToServerEvents {
 
 export interface ServerToClientEvents {
   "room:update": (payload: RoomStatePayload) => void;
+  "room:kicked": (payload: { message: string }) => void;
 
   "game:update": (payload: GameStatePayload) => void;
   "game:ended": (payload: GameEndedPayload) => void;

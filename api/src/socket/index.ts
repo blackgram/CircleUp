@@ -40,6 +40,11 @@ export function registerSocketHandlers(
       ack(result);
     });
 
+    socket.on("room:kick", async (payload, ack) => {
+      const result = await roomGateway.handleKick(socket, payload);
+      ack(result);
+    });
+
     socket.on("player:ready", async (ack) => {
       const result = await roomGateway.handleReady(socket);
       ack(result);
