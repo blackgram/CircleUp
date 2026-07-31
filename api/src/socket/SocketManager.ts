@@ -29,6 +29,7 @@ export class SocketManager {
         avatarUrl: p.avatarUrl,
         ready: p.ready,
         connected: p.connected,
+        role: p.role || "player",
       })),
       settings: room.settings as any,
     };

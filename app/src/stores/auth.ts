@@ -30,7 +30,13 @@ export const useAuthStore = create<AuthState>()(
 
       setUser: (user) => set({ user }),
 
-      logout: () => set({ user: null, accessToken: null, refreshToken: null }),
+      logout: () => {
+        // Clear LAN host on logout
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("circleup_lan_host");
+        }
+        set({ user: null, accessToken: null, refreshToken: null });
+      },
 
       isAuthenticated: () => !!get().accessToken,
 

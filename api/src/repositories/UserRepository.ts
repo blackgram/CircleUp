@@ -1,7 +1,30 @@
 import { User, IUser } from "../models/User";
+import { guestService } from "../services/auth/GuestService";
+import { env } from "../config/env";
 
 export class UserRepository {
   async findById(id: string): Promise<IUser | null> {
+    // Handle guest users in LAN mode
+    if (guestService.isGuest(id)) {
+      const guest = guestService.findById(id);
+      if (guest) {
+        return {
+          id: guest.id,
+          _id: guest.id,
+          nickname: guest.nickname,
+          displayName: guest.displayName,
+          email: guest.email,
+          avatarUrl: guest.avatarUrl,
+          role: guest.role,
+          gamesPlayed: 0,
+          gamesWon: 0,
+          createdAt: guest.createdAt,
+        } as any;
+      }
+      return null;
+    }
+
+    if (env.LAN_MODE) return null;
     return User.findById(id);
   }
 

@@ -1,4 +1,5 @@
 import http from "http";
+import os from "os";
 import app from "./app";
 import { env } from "./config/env";
 import { connectDatabase } from "./config/database";
@@ -13,8 +14,16 @@ const io = createSocketServer(server);
 registerSocketHandlers(io as any);
 
 connectDatabase().then(() => {
-  server.listen(env.PORT, () => {
+  server.listen(env.PORT, "0.0.0.0", () => {
     logger.info(`Server running on port ${env.PORT} [${env.NODE_ENV}]`);
+    if (env.LAN_MODE) {
+      const lanIp = Object.values(os.networkInterfaces())
+        .flat()
+        .find((i) => i && i.family === "IPv4" && !i.internal)?.address;
+      if (lanIp) {
+        logger.info(`LAN play available at: http://${lanIp}:${env.PORT}`);
+      }
+    }
   });
 });
 

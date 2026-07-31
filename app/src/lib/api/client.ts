@@ -1,10 +1,30 @@
 import axios from "axios";
 import { useAuthStore } from "@/stores/auth";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+const DEFAULT_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+
+export function getApiUrl(): string {
+  if (typeof window !== "undefined") {
+    const lanHost = localStorage.getItem("circleup_lan_host");
+    if (lanHost) return lanHost;
+  }
+  return DEFAULT_API_URL;
+}
+
+export function setLanHost(url: string | null): void {
+  if (url) {
+    localStorage.setItem("circleup_lan_host", url);
+  } else {
+    localStorage.removeItem("circleup_lan_host");
+  }
+  // Update axios baseURL
+  api.defaults.baseURL = url || DEFAULT_API_URL;
+}
 
 export const api = axios.create({
-  baseURL: API_URL,
+  baseURL: typeof window !== "undefined"
+    ? (localStorage.getItem("circleup_lan_host") || DEFAULT_API_URL)
+    : DEFAULT_API_URL,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -33,7 +53,7 @@ api.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post(`${API_URL}/api/auth/refresh`, { refreshToken });
+        const { data } = await axios.post(`${getApiUrl()}/api/auth/refresh`, { refreshToken });
         if (data.success && data.data) {
           useAuthStore.getState().setTokens(data.data.accessToken, data.data.refreshToken);
           originalRequest.headers.Authorization = `Bearer ${data.data.accessToken}`;

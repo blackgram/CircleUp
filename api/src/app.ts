@@ -20,9 +20,11 @@ const app = express();
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: env.CORS_ORIGIN.includes(",")
-    ? env.CORS_ORIGIN.split(",").map((o) => o.trim())
-    : env.CORS_ORIGIN,
+  origin: env.LAN_MODE
+    ? true
+    : env.CORS_ORIGIN.includes(",")
+      ? env.CORS_ORIGIN.split(",").map((o) => o.trim())
+      : env.CORS_ORIGIN,
   credentials: true,
 }));
 app.use(pinoHttp({ logger }));

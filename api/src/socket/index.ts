@@ -50,6 +50,11 @@ export function registerSocketHandlers(
       ack(result);
     });
 
+    socket.on("player:spectate", async (ack) => {
+      const result = await roomGateway.handleSpectate(socket);
+      ack(result);
+    });
+
     // ── Game Events ──
 
     socket.on("game:start", async (ack) => {

@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Image from "next/image";
-import { Loader2 } from "lucide-react";
+import { Loader2, Wifi } from "lucide-react";
 import type { ApiResponse, AuthResponse } from "@/types";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
@@ -175,6 +175,23 @@ export default function LoginPage() {
             Sign up
           </Link>
         </p>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-slate-200" />
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-white px-3 text-slate-500 font-medium">or</span>
+          </div>
+        </div>
+
+        <Link
+          href="/lan"
+          className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 font-bold text-sm py-3 rounded-xl text-slate-700 transition-all"
+        >
+          <Wifi className="w-4 h-4" />
+          Play on LAN (Offline)
+        </Link>
       </CardContent>
     </Card>
     </>

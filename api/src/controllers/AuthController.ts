@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { authService } from "../services/auth";
+import { authService, guestService } from "../services/auth";
 import { RegisterRequest, LoginRequest, GoogleLoginRequest, RefreshTokenRequest } from "../dto/requests";
 import { ApiResponse, AuthResponse, UserProfileResponse } from "../dto/responses";
 
@@ -25,6 +25,18 @@ export class AuthController {
     } catch (err: any) {
       const response: ApiResponse = { success: false, message: err.message };
       res.status(401).json(response);
+    }
+  }
+
+  async guest(req: Request, res: Response) {
+    try {
+      const { nickname } = req.body;
+      const data = guestService.login(nickname);
+      const response: ApiResponse<AuthResponse> = { success: true, data };
+      res.json(response);
+    } catch (err: any) {
+      const response: ApiResponse = { success: false, message: err.message };
+      res.status(400).json(response);
     }
   }
 

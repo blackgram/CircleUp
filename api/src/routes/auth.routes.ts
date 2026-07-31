@@ -62,6 +62,32 @@ authRouter.post("/login", authController.login);
 
 /**
  * @openapi
+ * /api/auth/guest:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Join as guest (LAN mode)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [nickname]
+ *             properties:
+ *               nickname:
+ *                 type: string
+ *                 minLength: 2
+ *                 maxLength: 20
+ *     responses:
+ *       200:
+ *         description: Guest login successful
+ *       400:
+ *         description: Invalid nickname
+ */
+authRouter.post("/guest", authController.guest);
+
+/**
+ * @openapi
  * /api/auth/google:
  *   post:
  *     tags: [Auth]

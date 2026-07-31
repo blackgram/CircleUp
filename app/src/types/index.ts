@@ -91,6 +91,7 @@ export interface RoomPlayerResponse {
   avatarUrl?: string;
   ready: boolean;
   connected: boolean;
+  role: "player" | "spectator";
   score: number;
 }
 
@@ -138,6 +139,7 @@ export interface PlayerPayload {
   avatarUrl?: string;
   ready: boolean;
   connected: boolean;
+  role: "player" | "spectator";
 }
 
 export interface GameStatePayload {

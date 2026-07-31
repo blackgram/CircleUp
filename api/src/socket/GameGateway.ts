@@ -77,6 +77,12 @@ export class GameGateway {
       }
 
       // Player action: submit answer
+      // Block spectators from submitting
+      const playerInRoom = room.players.find((p) => p.userId === userId);
+      if (playerInRoom?.role === "spectator") {
+        return { success: false, message: "Spectators cannot participate in the game" };
+      }
+
       const session = await gameSessionService.handleAction(
         room.sessionId,
         userId,

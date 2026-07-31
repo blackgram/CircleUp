@@ -7,6 +7,7 @@ export interface RoomPlayer {
   socketId: string;
   ready: boolean;
   connected: boolean;
+  role: "player" | "spectator";
   joinedAt: Date;
 }
 

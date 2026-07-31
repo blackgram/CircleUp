@@ -1,8 +1,7 @@
 import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "@/stores/auth";
+import { getApiUrl } from "@/lib/api/client";
 import type { RoomStatePayload, GameStatePayload, GameEndedPayload } from "@/types";
-
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 interface ServerToClientEvents {
   "room:update": (payload: RoomStatePayload) => void;
@@ -18,6 +17,7 @@ interface ClientToServerEvents {
   "room:leave": (ack: (res: SocketResponse) => void) => void;
   "room:kick": (payload: { userId: string }, ack: (res: SocketResponse) => void) => void;
   "player:ready": (ack: (res: SocketResponse) => void) => void;
+  "player:spectate": (ack: (res: SocketResponse) => void) => void;
   "game:start": (ack: (res: SocketResponse) => void) => void;
   "game:action": (payload: { action: string; payload: Record<string, unknown> }, ack: (res: SocketResponse) => void) => void;
 }
@@ -45,8 +45,9 @@ export function getCurrentRoomCode(): string | null {
 export function getSocket(): AppSocket {
   if (!socket) {
     const token = useAuthStore.getState().accessToken;
+    const socketUrl = getApiUrl();
 
-    socket = io(SOCKET_URL, {
+    socket = io(socketUrl, {
       auth: { token },
       autoConnect: false,
       reconnection: true,

@@ -133,6 +133,25 @@ export class RoomGateway {
     }
   }
 
+  async handleSpectate(socket: Socket): Promise<SocketResponse> {
+    const { userId, roomCode } = socket.data as SocketData;
+
+    if (!roomCode) {
+      return { success: false, message: "Not in a room" };
+    }
+
+    try {
+      const result = await roomService.toggleSpectator(userId, roomCode);
+
+      // Broadcast snapshot
+      await this.socketManager.broadcastRoomState(roomCode);
+
+      return { success: true, data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  }
+
   async handleDisconnect(socket: Socket): Promise<void> {
     const { userId, roomCode } = socket.data as SocketData;
 

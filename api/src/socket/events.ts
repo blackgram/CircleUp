@@ -6,6 +6,7 @@ export interface ClientToServerEvents {
   "room:kick": (payload: { userId: string }, ack: (res: SocketResponse) => void) => void;
 
   "player:ready": (ack: (res: SocketResponse) => void) => void;
+  "player:spectate": (ack: (res: SocketResponse) => void) => void;
 
   "game:start": (ack: (res: SocketResponse) => void) => void;
   "game:action": (payload: GameActionPayload, ack: (res: SocketResponse) => void) => void;
@@ -54,6 +55,7 @@ export interface PlayerPayload {
   avatarUrl?: string;
   ready: boolean;
   connected: boolean;
+  role: "player" | "spectator";
 }
 
 export interface GameStatePayload {

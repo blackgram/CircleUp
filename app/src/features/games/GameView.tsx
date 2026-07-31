@@ -1,6 +1,7 @@
 "use client";
 
 import { MostLikelyToGame } from "./MostLikelyToGame";
+import { SpectatorGameView } from "./SpectatorGameView";
 import type { GameStatePayload, RoomResponse } from "@/types";
 
 interface GameViewProps {
@@ -8,11 +9,22 @@ interface GameViewProps {
   room: RoomResponse;
   gameState: GameStatePayload;
   isHost: boolean;
+  isSpectator: boolean;
   currentUserId: string;
   onReturnToLobby?: () => void;
 }
 
-export function GameView({ gameSlug, room, gameState, isHost, currentUserId, onReturnToLobby }: GameViewProps) {
+export function GameView({ gameSlug, room, gameState, isHost, isSpectator, currentUserId, onReturnToLobby }: GameViewProps) {
+  if (isSpectator) {
+    return (
+      <SpectatorGameView
+        room={room}
+        gameState={gameState}
+        onReturnToLobby={onReturnToLobby}
+      />
+    );
+  }
+
   switch (gameSlug) {
     case "most-likely-to":
     case "m-l-t":

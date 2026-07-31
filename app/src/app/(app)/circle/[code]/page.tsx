@@ -8,7 +8,7 @@ import { useEnabledGames, useGameBySlug } from "@/hooks/useGames";
 import { getSocket, setCurrentRoomCode } from "@/lib/socket/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, Users, Play, LogOut, Crown, Check, Gamepad2, Settings, ChevronDown, Trophy, X } from "lucide-react";
+import { Copy, Users, Play, LogOut, Crown, Check, Gamepad2, Settings, ChevronDown, Trophy, X, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { GameView } from "@/features/games";
 import type { RoomResponse, RoomStatePayload, GameStatePayload, SettingDefinition } from "@/types";
@@ -169,6 +169,17 @@ export default function CirclePage() {
     });
   }
 
+  function handleToggleSpectate() {
+    const socket = getSocket();
+    socket.emit("player:spectate", (res: any) => {
+      if (res.success) {
+        toast.success(res.data?.role === "spectator" ? "Now spectating" : "Joined as player");
+      } else {
+        toast.error(res.message || "Failed to toggle spectator");
+      }
+    });
+  }
+
   function handleKickPlayer(targetUserId: string, nickname: string) {
     const socket = getSocket();
     socket.emit("room:kick", { userId: targetUserId }, (res) => {
@@ -263,6 +274,8 @@ export default function CirclePage() {
   }
 
   const isHost = user?.id === room.hostId;
+  const currentPlayer = room.players.find((p) => p.userId === user?.id);
+  const isSpectator = currentPlayer?.role === "spectator";
   const isPlaying = room.status === "PLAYING" || room.status === "FINISHED";
 
   // ── GAME SCREEN ──
@@ -272,6 +285,7 @@ export default function CirclePage() {
         room={room}
         gameState={gameState}
         isHost={isHost}
+        isSpectator={isSpectator}
         currentUserId={user?.id || ""}
         onLeave={handleLeave}
       />
@@ -306,7 +320,12 @@ export default function CirclePage() {
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
         <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
           <Users className="w-4 h-4 text-indigo-500" />
-          Players ({room.players.length}/{room.settings.maxPlayers})
+          Players ({room.players.filter((p) => p.role !== "spectator").length}/{room.settings.maxPlayers})
+          {room.players.some((p) => p.role === "spectator") && (
+            <span className="text-xs font-medium text-violet-500 ml-1">
+              + {room.players.filter((p) => p.role === "spectator").length} spectating
+            </span>
+          )}
         </h3>
         <div className="space-y-3">
           {room.players.map((player) => {
@@ -323,29 +342,48 @@ export default function CirclePage() {
                     <p className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                       {player.nickname}
                       {player.userId === room.hostId && <Crown className="w-3.5 h-3.5 text-amber-500" />}
+                      {player.role === "spectator" && <Eye className="w-3.5 h-3.5 text-violet-500" />}
                     </p>
                     <p className="text-[10px] text-slate-500">
-                      {player.connected ? "Connected" : "Disconnected"}
+                      {player.role === "spectator" ? "Spectating" : player.connected ? "Connected" : "Disconnected"}
                     </p>
                   </div>
                 </div>
                 {isMe ? (
-                  <button
-                    onClick={handleToggleReady}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
-                      player.ready
-                        ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                        : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                    }`}
-                  >
-                    {player.ready ? "✓ Ready" : "Ready Up"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {player.role !== "spectator" && (
+                      <button
+                        onClick={handleToggleReady}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+                          player.ready
+                            ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                        }`}
+                      >
+                        {player.ready ? "✓ Ready" : "Ready Up"}
+                      </button>
+                    )}
+                    {player.userId !== room.hostId && (
+                      <button
+                        onClick={handleToggleSpectate}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${
+                          player.role === "spectator"
+                            ? "bg-violet-50 text-violet-700 hover:bg-violet-100"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        <Eye className="w-3 h-3 inline mr-1" />
+                        {player.role === "spectator" ? "Join Game" : "Spectate"}
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
+                      player.role === "spectator" ? "bg-violet-50 text-violet-600" :
                       player.ready ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
                     }`}>
-                      {player.ready ? "Ready" : "Not Ready"}
+                      {player.role === "spectator" ? "Spectating" : player.ready ? "Ready" : "Not Ready"}
                     </span>
                     {isHost && (
                       <button
@@ -532,12 +570,14 @@ function GameScreen({
   room,
   gameState,
   isHost,
+  isSpectator,
   currentUserId,
   onLeave,
 }: {
   room: RoomResponse;
   gameState: GameStatePayload | null;
   isHost: boolean;
+  isSpectator: boolean;
   currentUserId: string;
   onLeave: () => void;
 }) {
@@ -545,7 +585,7 @@ function GameScreen({
   const [showScores, setShowScores] = useState(false);
 
   return (
-    <div className="max-w-3xl mx-auto pb-12 space-y-4">
+    <div className={`${isSpectator ? "max-w-6xl" : "max-w-3xl"} mx-auto pb-12 space-y-4`}>
       {/* Compact game header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -622,6 +662,7 @@ function GameScreen({
           room={room}
           gameState={gameState}
           isHost={isHost}
+          isSpectator={isSpectator}
           currentUserId={currentUserId}
           onReturnToLobby={() => {
             const socket = getSocket();

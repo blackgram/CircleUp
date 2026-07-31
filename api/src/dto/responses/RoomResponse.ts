@@ -7,6 +7,7 @@ export interface RoomPlayerResponse {
   avatarUrl?: string;
   ready: boolean;
   connected: boolean;
+  role: "player" | "spectator";
   score: number;
 }
 

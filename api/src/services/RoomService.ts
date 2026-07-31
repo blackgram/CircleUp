@@ -33,6 +33,7 @@ export class RoomService {
           socketId: "",
           ready: false,
           connected: true,
+          role: "player",
           joinedAt: new Date(),
         },
       ],
@@ -80,6 +81,7 @@ export class RoomService {
       socketId: "",
       ready: false,
       connected: true,
+      role: "player",
       joinedAt: new Date(),
     };
 
@@ -159,7 +161,8 @@ export class RoomService {
     if (room.hostId !== userId) throw new Error("Only the host can start the game");
     if (room.status !== RoomStatus.WAITING) throw new Error("Game already started");
     if (!room.gameSlug) throw new Error("No game selected");
-    if (room.players.length < 2) throw new Error("Need at least 2 players");
+    const activePlayers = room.players.filter((p) => p.role !== "spectator");
+    if (activePlayers.length < 2) throw new Error("Need at least 2 players");
 
     const session: GameSession = {
       id: generateId(),
@@ -170,7 +173,7 @@ export class RoomService {
       currentRound: 0,
       totalRounds: (room.settings.gameOptions.rounds as number) || 10,
       phase: "STARTING",
-      scores: room.players.map((p) => ({ userId: p.userId, points: 0 })),
+      scores: activePlayers.map((p) => ({ userId: p.userId, points: 0 })),
       rounds: [],
       metadata: {},
       startedAt: new Date(),
@@ -242,8 +245,31 @@ export class RoomService {
       avatarUrl: p.avatarUrl,
       ready: p.ready,
       connected: p.connected,
+      role: p.role || "player",
       score: 0,
     };
+  }
+
+  async toggleSpectator(userId: string, roomCode: string): Promise<{ role: "player" | "spectator" }> {
+    const room = await roomStorage.getRoom(roomCode);
+    if (!room) throw new Error("Room not found");
+
+    const player = room.players.find((p) => p.userId === userId);
+    if (!player) throw new Error("Not in room");
+
+    // Host cannot spectate
+    if (room.hostId === userId) throw new Error("Host cannot spectate");
+
+    // Can only toggle while waiting
+    if (room.status !== RoomStatus.WAITING) throw new Error("Cannot change role during a game");
+
+    player.role = player.role === "spectator" ? "player" : "spectator";
+    // Spectators are automatically ready
+    if (player.role === "spectator") {
+      player.ready = true;
+    }
+    await roomStorage.updateRoom(roomCode, room);
+    return { role: player.role };
   }
 }
 
