@@ -50,6 +50,7 @@ export default function CirclePage() {
         });
         return {
           ...prev,
+          hostId: payload.hostId,
           players: payload.players as RoomResponse["players"],
           status: payload.status as RoomResponse["status"],
           gameSlug: payload.gameSlug,
@@ -583,6 +584,20 @@ function GameScreen({
 }) {
   const [showPlayers, setShowPlayers] = useState(false);
   const [showScores, setShowScores] = useState(false);
+
+  // Recovery: if room is PLAYING but game state hasn't arrived, re-request it
+  useEffect(() => {
+    if (!gameState && (room.status === "PLAYING" || room.status === "STARTING")) {
+      const timer = setTimeout(() => {
+        const socket = getSocket();
+        console.log("[GameScreen] No game state, re-joining to recover...");
+        socket.emit("room:join", { roomCode: room.roomCode }, (res) => {
+          console.log("[GameScreen] Recovery join:", res);
+        });
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState, room.status, room.roomCode]);
 
   return (
     <div className={`${isSpectator ? "max-w-6xl" : "max-w-3xl"} mx-auto pb-12 space-y-4`}>
